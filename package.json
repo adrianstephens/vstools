@@ -1,0 +1,125 @@
+{
+	"name": "vstools",
+	"displayName": "Visual Studio Tools",
+	"description": "Support for Visual Studio projects inside Code",
+	"version": "0.0.1",
+	"publisher": "adrianstephens",
+	"repository": "https://github.com/Microsoft/vscode-extension-samples/helloworld-sample",
+	"engines": {
+		"vscode": "^1.74.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+	    "workspaceContains:*.sln"
+	],
+
+	"main": "./out/extension.js",
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+			  {
+				"id": "sln_explorer2",
+				"title": "Solution2",
+				"icon": "icons/sln.svg",
+				"when": "loadedFlag"
+			  }
+			]
+		},
+		"views": {
+			"sln_explorer2": [
+			  {
+				"id": "sln_view",
+				"name": "Explorer2",
+				"when": "loadedFlag"
+			  }
+			]
+		},
+		"commands": [
+			{
+				"command": "vstools.projectPath",
+				"title": "projectPath"
+			},
+			{
+				"command": "vstools.refreshEntry",
+				"title": "Refresh",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "vstools.deleteEntry",
+				"title": "Delete",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "vstools.buildProject",
+				"title": "Build",
+				"icon": "./icons/BuildSelection.svg"
+			},
+			{
+				"command": "vstools.helloWorld",
+				"title": "Hello World"
+			}
+		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "vstools.refreshEntry",
+					"when": "view == sln_view",
+					"group": "navigation"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "vstools.deleteEntry",
+					"when": "view == sln_view && viewItem == file",
+					"group": "inline"
+				},
+				{
+					"command": "vstools.buildProject",
+					"when": "view == sln_view && viewItem == project",
+					"group": "inline"
+				}
+			]
+		},
+		"languages": [
+			{
+			  	"id": "vcxproj",
+			  	"extensions": [".vcxproj"],
+				"icon": {
+					"light": "icons/vcxproj.svg",
+					"dark": "icons/vcxproj.svg"
+				}
+			}
+		],
+		"problemMatchers": [
+			{
+				"name": "msbuild",
+				"fileLocation": ["autoDetect", "${workspaceFolder}"],
+				"pattern": {
+					"regexp": "(.*)\\((\\d+),(\\d+)\\): (warning|error) : (.*)",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				}
+			}
+		]
+	},
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"lint": "eslint \"src/**/*.ts\"",
+		"watch": "tsc -watch -p ./"
+	},
+	"devDependencies": {
+		"@types/node": "^18",
+		"@types/vscode": "^1.73.0",
+		"@typescript-eslint/eslint-plugin": "^7.14.0",
+		"@typescript-eslint/parser": "^7.14.0",
+		"eslint": "^8.26.0",
+		"typescript": "^5.5.2",
+		"xml-js": "^1.6.11"
+	}
+}
