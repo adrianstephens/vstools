@@ -1,0 +1,220 @@
+@font-face {
+	font-family: "codicon";
+	src: url("./codicon.ttf?9642aa1d48ab4e55aa1bf3f0b8678aa1") format("truetype");
+}
+
+.codicon {
+	font: normal normal normal 16px/1 codicon;
+	display: inline-block;
+	text-decoration: none;
+	text-rendering: auto;
+	text-align: center;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	user-select: none;
+	-webkit-user-select: none;
+	-ms-user-select: none;
+}
+
+.hidden {
+    display: none;
+}
+
+body {
+    font-family: "Segoe WPC", "Segoe UI", sans-serif;
+    font-size: 13px;
+    background-color: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    margin: 0;
+    padding: 10px 20px;
+}
+
+.settings-sidebar {
+    flex: 1;
+    width: 100px;
+    padding: 10px;
+    position: sticky;
+    top: 30px;
+    white-space: nowrap;
+    height: 100%;
+    overflow: hidden;
+
+    & div {
+        padding: 2px;
+        overflow: hidden;
+    }
+    
+    & ul {
+        list-style-type: none;
+        text-overflow: ellipsis;
+    }
+    
+    & li {
+        font-weight: normal;
+        padding: 2px;
+        text-overflow: ellipsis;
+    }
+    
+    & li.active {
+        font-weight: bold;
+    }
+    
+}
+
+.settings-content {
+    flex: 3;
+    padding-left: 10px;
+    border-left: 1px solid var(--vscode-settings-headerBorder);
+
+    & h1 {
+        font-size: 26px;
+        font-weight: 600;
+        border-bottom: 1px solid var(--vscode-settings-headerBorder);
+        padding-bottom: 10px;
+        position: sticky;
+        top:0;
+        background-color: var(--vscode-editor-background);
+    }
+    
+    & h2 {
+        font-size: 22px;
+        font-weight: 600;
+        border-bottom: 1px solid var(--vscode-settings-headerBorder);
+        padding-bottom: 5px;
+        margin-bottom: 10px;
+        position: sticky;
+        top:40px;
+        background-color: var(--vscode-editor-background);
+    }
+
+    &&.invalid::after {
+        position: fixed;
+        top:30vh;
+        rotate: -45deg;
+        font-size: 25vmin;
+		color:#ff0000;
+        content:'Invalid';
+    }
+    
+}
+
+.settings-group {
+    flex: 1;
+    margin-bottom: 30px;
+}
+
+.setting-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+
+    & label {
+        flex: 1;
+        pointer-events: none;
+        .modified &::after {
+            font-family: 'codicon';
+            content: '\eae2';
+            display: inline-block;
+            margin-right: 6px;
+            cursor: pointer;
+            pointer-events: all;
+        }
+    }
+    
+    & input[type="checkbox"] {
+        flex: 1;
+    }
+
+    & input[type="text"],
+    & select {
+        border: 1px solid var(--vscode-settings-textInputBorder);
+        background-color: var(--vscode-settings-textInputBackground);
+        color: var(--vscode-settings-textInputForeground);
+        padding: 5px;
+        flex: 1;
+        &::placeholder, &.inherit {
+            opacity: 0.5;
+        }
+        .modified & {
+            background-color: var(--vscode-editor-findMatchHighlightBackground);
+            opacity: 1.0;
+        }
+        & option {
+            background-color: var(--vscode-settings-textInputBackground);
+        }
+    }
+
+    & textarea {
+        resize: vertical;
+        flex: 1;
+        font-family: "Segoe WPC", "Segoe UI", sans-serif;
+        border-color: var(--vscode-settings-textInputBorder);
+        color: var(--vscode-settings-textInputForeground);
+        background-color: var(--vscode-settings-textInputBackground);
+        &::placeholder {
+            opacity: 0.5;
+        }
+        .modified & {
+            background-color: var(--vscode-editor-findMatchHighlightBackground);
+        }
+    }
+
+    & span {
+        flex: 1;
+    }
+
+    & div.multi {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        div {
+            display: flex;
+            flex-direction: row;
+        }
+    }
+}
+/*
+.modified:first-child::after {
+    font-family: 'codicon';
+    content: '\eae2';
+    display: inline-block;
+    margin-right: 6px;
+}
+*/
+.nested {
+    display: none;
+}
+
+.caret {
+    cursor: pointer;
+    user-select: none;
+}
+
+.caret::before {
+    font-family: 'codicon';
+    content: '\eab6';
+    display: inline-block;
+    margin-right: 6px;
+}
+
+.caret-down::before {
+    font-family: 'codicon';
+    content: '\eab4';
+}
+
+button {
+    color: var(--vscode-button-foreground);
+    background-color: var(--vscode-button-background);
+    border: 1px solid var(--vscode-button-border,transparent);
+    border-radius: 2px;
+    line-height: 18px;
+    padding: 4px;
+    text-align: center;
+}
+
+span[contenteditable] {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

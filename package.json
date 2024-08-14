@@ -2,9 +2,16 @@
 	"name": "vstools",
 	"displayName": "Visual Studio Tools",
 	"description": "Support for Visual Studio projects inside Code",
+	"icon": "media/icon.png",
 	"version": "0.0.1",
 	"publisher": "adrianstephens",
-	"repository": "https://github.com/Microsoft/vscode-extension-samples/helloworld-sample",
+	"repository": "https://github.com/adrianstephens/vstools",
+	"files": [
+		"out/*",
+		"assets/*",
+		"LICENSE.txt"
+	],
+
 	"engines": {
 		"vscode": "^1.74.0"
 	},
@@ -12,97 +19,352 @@
 		"Other"
 	],
 	"activationEvents": [
-	    "workspaceContains:*.sln"
+		"workspaceContains:*.sln"
 	],
-
 	"main": "./out/extension.js",
 	"contributes": {
 		"viewsContainers": {
 			"activitybar": [
-			  {
-				"id": "sln_explorer2",
-				"title": "Solution2",
-				"icon": "icons/sln.svg",
-				"when": "loadedFlag"
-			  }
+				{
+					"id": "vstools-container",
+					"title": "VSTools",
+					"icon": "media/sln.svg",
+					"when": "vstools.loaded"
+				}
 			]
 		},
 		"views": {
-			"sln_explorer2": [
-			  {
-				"id": "sln_view",
-				"name": "Explorer2",
-				"when": "loadedFlag"
-			  }
+			"vstools-container": [
+				{
+					"id": "vstools-view",
+					"name": "Solution",
+					"when": "vstools.loaded"
+				}
 			]
+
 		},
+		"submenus": [
+			{
+				"id": "vstools.projectViewBy",
+				"label": "view by",
+				"icon": {
+					"light": "media/TreeView.svg",
+					"dark": "media/dark/TreeView.svg"
+				}
+			}
+		],
 		"commands": [
 			{
-				"command": "vstools.projectPath",
-				"title": "projectPath"
+				"command": "vstools.align",
+				"title": "Align Cursors"
 			},
 			{
-				"command": "vstools.refreshEntry",
-				"title": "Refresh",
-				"icon": "$(refresh)"
+				"command": "vstools.open",
+				"title": "Open File",
+				"icon": "$(edit)",
+				"category": "VSTools",
+				"when": "never"
 			},
 			{
-				"command": "vstools.deleteEntry",
+				"command": "vstools.cut",
+				"title": "Cut",
+				"icon": "$(cut)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.copy",
+				"title": "Copy",
+				"icon": "$(copy)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.paste",
+				"title": "Paste",
+				"icon": "$(paste)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.delete",
 				"title": "Delete",
-				"icon": "$(trash)"
+				"icon": "$(trash)",
+				"category": "VSTools"
 			},
 			{
-				"command": "vstools.buildProject",
+				"command": "vstools.rename",
+				"title": "Rename",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.createFile",
+				"title": "Create File",
+				"icon": "$(new-file)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.createFolder",
+				"title": "Create Folder",
+				"icon": "$(new-folder)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.refresh",
+				"title": "Refresh",
+				"icon": "$(refresh)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.settings",
+				"title": "Settings",
+				"icon": "$(settings)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.projectStartup",
+				"title": "Set as Startup Project",
+				"icon": "$(check)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.projectBuild",
 				"title": "Build",
-				"icon": "./icons/BuildSelection.svg"
+				"icon": {
+					"light": "media/BuildSelection.svg",
+					"dark": "media/dark/BuildSelection.svg"
+				},
+				"category": "VSTools"
 			},
 			{
-				"command": "vstools.helloWorld",
-				"title": "Hello World"
+				"command": "vstools.projectViewByFilter",
+				"title": "Filter",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.projectViewByFolder",
+				"title": "Folders",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.projectViewByItem",
+				"title": "Items",
+				"category": "VSTools"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "vstools.cut",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCut",
+				"key": "ctrl+x",
+				"mac": "cmd+x"
+			},
+			{
+				"command": "vstools.copy",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCopy",
+				"key": "ctrl+c",
+				"mac": "cmd+c"
+			},
+			{
+				"command": "vstools.paste",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasPaste",
+				"key": "ctrl+v",
+				"mac": "cmd+v"
+			},
+			{
+				"command": "vstools.rename",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasRename",
+				"key": "f2",
+				"mac": "f2"
+			},
+			{
+				"command": "vstools.delete",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasDelete",
+				"key": "delete",
+				"mac": "delete"
+			},
+			{
+				"command": "vstools.createFile",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCreateFile",
+				"key": "ctrl+shift+a",
+				"mac": "cmd+shift+a"
+			},
+			{
+				"command": "vstools.createFolder",
+				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCreateFolder",
+				"key": "ctrl+shift+f",
+				"mac": "cmd+shift+f"
 			}
 		],
 		"menus": {
+			"commandPalette": [
+				{
+					"command": "vstools.projectStartup",
+					"when": "never"
+				},
+				{
+					"command": "vstools.open",
+					"when": "never"
+				},
+				{
+					"command": "vstools.cut",
+					"when": "never"
+				},
+				{
+					"command": "vstools.copy",
+					"when": "never"
+				},
+				{
+					"command": "vstools.paste",
+					"when": "never"
+				},
+				{
+					"command": "vstools.delete",
+					"when": "never"
+				},
+				{
+					"command": "vstools.rename",
+					"when": "never"
+				},
+				{
+					"command": "vstools.createFile",
+					"when": "never"
+				},
+				{
+					"command": "vstools.createFolder",
+					"when": "never"
+				},
+				{
+					"command": "vstools.refresh",
+					"when": "never"
+				},
+				{
+					"command": "vstools.settings",
+					"when": "never"
+				},
+				{
+					"command": "vstools.projectStartup",
+					"when": "never"
+				},
+				{
+					"command": "vstools.projectBuild",
+					"when": "never"
+				},
+				{
+					"command": "vstools.projectViewByFilter",
+					"when": "never"
+				},
+				{
+					"command": "vstools.projectViewByFolder",
+					"when": "never"
+				},
+				{
+					"command": "vstools.projectViewByItem",
+					"when": "never"
+				}
+			],
 			"view/title": [
 				{
-					"command": "vstools.refreshEntry",
-					"when": "view == sln_view",
+					"command": "vstools.refresh",
+					"when": "view == vstools-view",
 					"group": "navigation"
 				}
 			],
 			"view/item/context": [
 				{
-					"command": "vstools.deleteEntry",
-					"when": "view == sln_view && viewItem == file",
+					"command": "vstools.open",
+					"when": "view == vstools-view && viewItem in vstools.hasOpen",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.cut",
+					"when": "view == vstools-view && viewItem in vstools.hasCut",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.copy",
+					"when": "view == vstools-view && viewItem in vstools.hasCopy",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.paste",
+					"when": "view == vstools-view && viewItem in vstools.hasPaste",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.delete",
+					"when": "view == vstools-view && viewItem in vstools.hasDelete",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.rename",
+					"when": "view == vstools-view && viewItem in vstools.hasRename",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.createFile",
+					"when": "view == vstools-view && viewItem in vstools.hasCreateFile",
+					"group": "modify"
+				},
+				{
+					"command": "vstools.createFolder",
+					"when": "view == vstools-view && viewItem in vstools.hasCreateFolder",
+					"group": "edit"
+				},
+				{
+					"command": "vstools.settings",
+					"when": "view == vstools-view && viewItem in vstools.hasSettings",
 					"group": "inline"
 				},
 				{
-					"command": "vstools.buildProject",
-					"when": "view == sln_view && viewItem == project",
+					"command": "vstools.settings",
+					"when": "view == vstools-view && viewItem in vstools.hasSettings",
+					"group": "special"
+				},
+				{
+					"command": "vstools.projectStartup",
+					"when": "view == vstools-view && viewItem == project",
+					"group": "special"
+				},
+				{
+					"command": "vstools.projectBuild",
+					"when": "view == vstools-view && viewItem == project",
+					"group": "special"
+				},
+				{
+					"submenu": "vstools.projectViewBy",
+					"when": "view == vstools-view && viewItem == project",
+					"group": "special"
+				},
+				{
+					"command": "vstools.projectBuild",
+					"when": "view == vstools-view && viewItem == project",
 					"group": "inline"
+				}
+			],
+			"vstools.projectViewBy": [
+				{
+					"command": "vstools.projectViewByFilter"
+				},
+				{
+					"command": "vstools.projectViewByFolder"
+				},
+				{
+					"command": "vstools.projectViewByItem"
 				}
 			]
 		},
-		"languages": [
-			{
-			  	"id": "vcxproj",
-			  	"extensions": [".vcxproj"],
-				"icon": {
-					"light": "icons/vcxproj.svg",
-					"dark": "icons/vcxproj.svg"
-				}
-			}
-		],
 		"problemMatchers": [
 			{
 				"name": "msbuild",
-				"fileLocation": ["autoDetect", "${workspaceFolder}"],
+				"owner": "vstools",
+				"fileLocation": [
+					"autoDetect",
+					"${command:vstools.projectDir}"
+				],
 				"pattern": {
-					"regexp": "(.*)\\((\\d+),(\\d+)\\): (warning|error) : (.*)",
+					"regexp": "(.*)\\((.*)\\) *: *(warning|error) *: *(.*)",
 					"file": 1,
-					"line": 2,
-					"column": 3,
-					"severity": 4,
-					"message": 5
+					"location": 2,
+					"severity": 3,
+					"message": 4
 				}
 			}
 		]
@@ -118,8 +380,10 @@
 		"@types/vscode": "^1.73.0",
 		"@typescript-eslint/eslint-plugin": "^7.14.0",
 		"@typescript-eslint/parser": "^7.14.0",
+		"@vscode/codicons": "^0.0.20",
 		"eslint": "^8.26.0",
-		"typescript": "^5.5.2",
-		"xml-js": "^1.6.11"
+		"typescript": "^5.5.2"
+	},
+	"dependencies": {
 	}
 }
