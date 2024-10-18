@@ -8,9 +8,9 @@ function jsx_props(props: any): string {
 
 function jsx_children(...children: any[]): string {
 	return children.flat().map(child =>
-			typeof child === 'string'		? child
-		:	typeof child === 'undefined'	? 'undefined'
-		:	jsx(child.type, child.props, ...child.children)
+			typeof child === 'object'
+		?	jsx(child.type, child.props, ...child.children ?? [])
+		:	child?.toString() ?? ''
 	).join('');
 }
 
@@ -37,7 +37,7 @@ export function fragment(props: any, ...children: any[]): string {
 //export type Element = ReturnType<typeof jsx>;
 
 
-export const codiconsLibrary = {
+export const codicons = {
 	add:	    							 0xea60,
 	lightbulb:	    						 0xea61,
 	repo:	    							 0xea62,
@@ -500,3 +500,17 @@ export const codiconsLibrary = {
 	percentage:	    						 0xec33,
 	attach:	    							 0xec34,
 } as const;
+
+export function Icon(props: {code:number}) {
+	return <span class="codicon">&#x{props.code.toString(16)};</span>;
+}
+export function ClickableIcon(props: {code:number, id:string}) {
+	return <button class="codicon" id={props.id}>&#x{props.code.toString(16)};</button>;
+}
+export function Button(props: {text:string, id:string}) {
+	return <button id={props.id}>{props.text}</button>;
+}
+
+export function Label(props: {id: string, display: string}) {
+	return <label for={props.id}>{props.display}</label>;
+}

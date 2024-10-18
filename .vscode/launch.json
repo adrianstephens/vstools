@@ -10,12 +10,15 @@
 			"request": "launch",
 			"runtimeExecutable": "${execPath}",
 			"args": [
+				"--trace-deprecation",
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"D:\\dev\\shared\\"
 			],
 			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
+				"${workspaceFolder}/out/**/*.js",
+				"E:/Github/vscode/out/**/*.js",
 			],
+			"sourceMaps": true,
 			"preLaunchTask": "npm: watch"
 		}
 	]

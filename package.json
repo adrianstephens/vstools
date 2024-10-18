@@ -2,7 +2,7 @@
 	"name": "vstools",
 	"displayName": "Visual Studio Tools",
 	"description": "Support for Visual Studio projects inside Code",
-	"icon": "media/icon.png",
+	"icon": "assets/icon.png",
 	"version": "0.0.1",
 	"publisher": "adrianstephens",
 	"repository": "https://github.com/adrianstephens/vstools",
@@ -11,7 +11,6 @@
 		"assets/*",
 		"LICENSE.txt"
 	],
-
 	"engines": {
 		"vscode": "^1.74.0"
 	},
@@ -23,12 +22,22 @@
 	],
 	"main": "./out/extension.js",
 	"contributes": {
+		"configuration": {
+			"title": "VS Tools",
+			"properties": {
+				"msbuild.autoDetect": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable or disable auto-detection of tasks."
+				}
+			}
+		},
 		"viewsContainers": {
 			"activitybar": [
 				{
 					"id": "vstools-container",
 					"title": "VSTools",
-					"icon": "media/sln.svg",
+					"icon": "assets/sln.svg",
 					"when": "vstools.loaded"
 				}
 			]
@@ -40,30 +49,37 @@
 					"name": "Solution",
 					"when": "vstools.loaded"
 				}
+			],
+			"debug": [
+				{
+					"id": "vstools-modules",
+					"name": "Modules",
+					"type": "webview",
+					"when": "vstools.loaded"
+				}
 			]
-
 		},
 		"submenus": [
 			{
 				"id": "vstools.projectViewBy",
 				"label": "view by",
 				"icon": {
-					"light": "media/TreeView.svg",
-					"dark": "media/dark/TreeView.svg"
+					"light": "assets/TreeView.svg",
+					"dark": "assets/dark/TreeView.svg"
 				}
 			}
 		],
 		"commands": [
 			{
-				"command": "vstools.align",
-				"title": "Align Cursors"
+				"command": "vstools.addSolution",
+				"title": "Add to Solution Explorer",
+				"category": "VSTools"
 			},
 			{
 				"command": "vstools.open",
 				"title": "Open File",
 				"icon": "$(edit)",
-				"category": "VSTools",
-				"when": "never"
+				"category": "VSTools"
 			},
 			{
 				"command": "vstools.cut",
@@ -95,15 +111,38 @@
 				"category": "VSTools"
 			},
 			{
-				"command": "vstools.createFile",
-				"title": "Create File",
+				"command": "vstools.addFile",
+				"title": "Add existing File",
+				"icon": "$(add)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.newFile",
+				"title": "Add new File",
 				"icon": "$(new-file)",
 				"category": "VSTools"
 			},
 			{
-				"command": "vstools.createFolder",
-				"title": "Create Folder",
+				"command": "vstools.newFolder",
+				"title": "New Folder...",
 				"icon": "$(new-folder)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.addProject",
+				"title": "Add existing Project",
+				"icon": "$(add)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.newProject",
+				"title": "Add a new Project",
+				"icon": "$(wand)",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.addPackage",
+				"title": "Add NuGet Package to Project",
 				"category": "VSTools"
 			},
 			{
@@ -125,11 +164,11 @@
 				"category": "VSTools"
 			},
 			{
-				"command": "vstools.projectBuild",
+				"command": "vstools.build",
 				"title": "Build",
 				"icon": {
-					"light": "media/BuildSelection.svg",
-					"dark": "media/dark/BuildSelection.svg"
+					"light": "assets/BuildSelection.svg",
+					"dark": "assets/dark/BuildSelection.svg"
 				},
 				"category": "VSTools"
 			},
@@ -146,6 +185,17 @@
 			{
 				"command": "vstools.projectViewByItem",
 				"title": "Items",
+				"category": "VSTools"
+			},
+			{
+				"command": "vstools.findInSolution",
+				"title": "Find in Solution",
+				"category": "VSTools",
+				"when": "never"
+			},
+			{
+				"command": "vstools.sendDAPRequest",
+				"title": "Send DAP request",
 				"category": "VSTools"
 			}
 		],
@@ -181,13 +231,13 @@
 				"mac": "delete"
 			},
 			{
-				"command": "vstools.createFile",
+				"command": "vstools.newFile",
 				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCreateFile",
 				"key": "ctrl+shift+a",
 				"mac": "cmd+shift+a"
 			},
 			{
-				"command": "vstools.createFolder",
+				"command": "vstools.newFolder",
 				"when": "focusedView == vstools-view && vstools.selected in vstools.hasCreateFolder",
 				"key": "ctrl+shift+f",
 				"mac": "cmd+shift+f"
@@ -224,11 +274,11 @@
 					"when": "never"
 				},
 				{
-					"command": "vstools.createFile",
+					"command": "vstools.newFile",
 					"when": "never"
 				},
 				{
-					"command": "vstools.createFolder",
+					"command": "vstools.newFolder",
 					"when": "never"
 				},
 				{
@@ -244,7 +294,7 @@
 					"when": "never"
 				},
 				{
-					"command": "vstools.projectBuild",
+					"command": "vstools.build",
 					"when": "never"
 				},
 				{
@@ -258,6 +308,21 @@
 				{
 					"command": "vstools.projectViewByItem",
 					"when": "never"
+				},
+				{
+					"command": "vstools.findInSolution",
+					"when": "never"
+				}
+			],
+			"file/newFile": [
+				{
+					"command": "vstools.newProject"
+				}
+			],
+			"explorer/context": [
+				{
+					"command": "vstools.addSolution",
+					"when": "resourceExtname == '.sln'"
 				}
 			],
 			"view/title": [
@@ -268,6 +333,16 @@
 				}
 			],
 			"view/item/context": [
+				{
+					"command": "vstools.addProject",
+					"when": "view == vstools-view && viewItem == solution",
+					"group": "inline"
+				},
+				{
+					"command": "vstools.newProject",
+					"when": "view == vstools-view && viewItem == solution",
+					"group": "inline"
+				},
 				{
 					"command": "vstools.open",
 					"when": "view == vstools-view && viewItem in vstools.hasOpen",
@@ -299,14 +374,19 @@
 					"group": "edit"
 				},
 				{
-					"command": "vstools.createFile",
-					"when": "view == vstools-view && viewItem in vstools.hasCreateFile",
+					"command": "vstools.addFile",
+					"when": "view == vstools-view && viewItem in vstools.hasAddFile",
 					"group": "modify"
 				},
 				{
-					"command": "vstools.createFolder",
+					"command": "vstools.newFile",
+					"when": "view == vstools-view && viewItem in vstools.hasCreateFile",
+					"group": "inline"
+				},
+				{
+					"command": "vstools.newFolder",
 					"when": "view == vstools-view && viewItem in vstools.hasCreateFolder",
-					"group": "edit"
+					"group": "inline"
 				},
 				{
 					"command": "vstools.settings",
@@ -319,13 +399,18 @@
 					"group": "special"
 				},
 				{
+					"command": "vstools.addPackage",
+					"when": "view == vstools-view && viewItem == project",
+					"group": "special"
+				},
+				{
 					"command": "vstools.projectStartup",
 					"when": "view == vstools-view && viewItem == project",
 					"group": "special"
 				},
 				{
-					"command": "vstools.projectBuild",
-					"when": "view == vstools-view && viewItem == project",
+					"command": "vstools.build",
+					"when": "view == vstools-view && viewItem in vstools.hasBuild",
 					"group": "special"
 				},
 				{
@@ -334,8 +419,8 @@
 					"group": "special"
 				},
 				{
-					"command": "vstools.projectBuild",
-					"when": "view == vstools-view && viewItem == project",
+					"command": "vstools.build",
+					"when": "view == vstools-view && viewItem in vstools.hasBuild",
 					"group": "inline"
 				}
 			],
@@ -349,8 +434,54 @@
 				{
 					"command": "vstools.projectViewByItem"
 				}
+			],
+			"editor/title/context": [
+				{
+					"command": "vstools.findInSolution",
+					"group": "2_workspace@inline"
+				}
 			]
 		},
+		"taskDefinitions": [
+			{
+				"type": "msbuild",
+				"required": [
+					"properties",
+					"target",
+					"solution"
+				],
+				"properties": {
+					"properties": {
+						"type": "object",
+						"description": "passed as properties to msbuild"
+					},
+					"target": {
+						"type": "string",
+						"description": "The project to build"
+					},
+					"solution": {
+						"type": "string",
+						"description": "The path to the solution file"
+					},
+					"switches": {
+						"type": "object",
+						"description": "Additional msbuild switches"
+					}
+				}
+			}
+		],
+		"debuggers": [
+			{
+				"type": "cppvsdbg",
+				"label": "C++ (Visual Studio)",
+				"initialConfigurations": []
+			},
+			{
+				"type": "coreclr",
+				"label": "C# (.NET Core)",
+				"initialConfigurations": []
+			}
+		],
 		"problemMatchers": [
 			{
 				"name": "msbuild",
@@ -360,7 +491,7 @@
 					"${command:vstools.projectDir}"
 				],
 				"pattern": {
-					"regexp": "(.*)\\((.*)\\) *: *(warning|error) *: *(.*)",
+					"regexp": "(.*)\\((.*)\\) *: *(warning|error) *\\w*: *(.*)",
 					"file": 1,
 					"location": 2,
 					"severity": 3,
@@ -373,7 +504,8 @@
 		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -p ./",
 		"lint": "eslint \"src/**/*.ts\"",
-		"watch": "tsc -watch -p ./"
+		"watch": "tsc -watch -p ./",
+		"icons": "node ./icons.js"
 	},
 	"devDependencies": {
 		"@types/node": "^18",
@@ -382,8 +514,9 @@
 		"@typescript-eslint/parser": "^7.14.0",
 		"@vscode/codicons": "^0.0.20",
 		"eslint": "^8.26.0",
-		"typescript": "^5.5.2"
+		"vscode-debugprotocol": "^1.51.0"
 	},
 	"dependencies": {
+		"source-map-support": "^0.5.21"
 	}
 }

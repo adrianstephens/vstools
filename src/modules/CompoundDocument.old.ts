@@ -10,26 +10,26 @@ const SecID = {
 export class CompDocHeader {
 	public fields : {[id:string] : any} = {};     
 
-	constructor(r : binary.reader) {
-		this.fields = r.read_fields(
-			['magic',			new binary.BigIntType(8, true)],
-			['id',				new binary.Uint8ArrayType(16)],
-			['revision',		binary.UINT16_LE],
-			['version',			binary.UINT16_LE],
-			['byteorder',		binary.UINT16_LE],
-			['sector_size',		binary.UINT16_LE],
-			['short_size',		binary.UINT16_LE],
-			['unused1',			new binary.SkipType(10)],
-			['num_sectors',		binary.UINT32_LE],
-			['first_sector',	binary.UINT32_LE],
-			['unused2',			new binary.SkipType(4)],
-			['min_size',		binary.UINT32_LE],
-			['first_short',		binary.UINT32_LE],
-			['num_short',		binary.UINT32_LE],
-			['first_master',	binary.UINT32_LE],
-			['num_master',		binary.UINT32_LE],
-			['alloc',			new binary.Uint8ArrayType(436)]
-		);
+	constructor(r : binary.stream) {
+		this.fields = r.read_fields({
+			magic:			new binary.BigIntType(8, true),
+			id:				new binary.Uint8ArrayType(16),
+			revision:		binary.UINT16_LE,
+			version:		binary.UINT16_LE,
+			byteorder:		binary.UINT16_LE,
+			sector_size:	binary.UINT16_LE,
+			short_size:		binary.UINT16_LE,
+			unused1:		new binary.SkipType(10),
+			num_sectors:	binary.UINT32_LE,
+			first_sector:	binary.UINT32_LE,
+			unused2:		new binary.SkipType(4),
+			min_size:		binary.UINT32_LE,
+			first_short:	binary.UINT32_LE,
+			num_short:		binary.UINT32_LE,
+			first_master:	binary.UINT32_LE,
+			num_master:		binary.UINT32_LE,
+			alloc:			new binary.Uint8ArrayType(436),
+		});
 	}
 	sector_offset(id : number)		{ return (id + 1) << this.fields.sector_size; }
 	short_offset(id : number)		{ return id << this.fields.short_size; }
@@ -52,23 +52,23 @@ const COLOUR = {
 class CompDocDirEntry {
 	public fields : {[id:string] : any} = {};     
 
-	constructor(r : binary.reader) {
-		this.fields = r.read_fields(
-			['name',		new binary.StringType(64, 'utf-16')],
-			['name_size',	binary.UINT16_LE],
-			['type',		binary.UINT8],
-			['colour',		binary.UINT8],
-			['left',		binary.INT32_LE],
-			['right',		binary.INT32_LE],
-			['root',		binary.INT32_LE],
-			['guid',		new binary.Uint8ArrayType(16)],
-			['flags',		binary.UINT32_LE],
-			['creation',	binary.UINT64_LE],
-			['modification',binary.UINT64_LE],
-			['sec_id',		binary.INT32_LE],
-			['size',		binary.UINT32_LE],
-			['unused',		binary.UINT32_LE]
-		);
+	constructor(r : binary.stream) {
+		this.fields = r.read_fields({
+			name:			new binary.FixedStringType(64, 'utf16le'),
+			name_size:		binary.UINT16_LE,
+			type:			binary.UINT8,
+			colour:			binary.UINT8,
+			left:			binary.INT32_LE,
+			right:			binary.INT32_LE,
+			root:			binary.INT32_LE,
+			guid:			new binary.Uint8ArrayType(16),
+			flags:			binary.UINT32_LE,
+			creation:		binary.UINT64_LE,
+			modification:	binary.UINT64_LE,
+			sec_id:			binary.INT32_LE,
+			size:			binary.UINT32_LE,
+			unused:			binary.UINT32_LE
+		});
 		this.fields.name = this.fields.name.substr(0, this.fields.name_size / 2 - 1);
 	}
 }
@@ -80,7 +80,7 @@ export class CompDocMaster {
 	ssat : Int32Array;
 	shortcont : Uint8Array;
 
-	constructor(r : binary.reader, public header : CompDocHeader) {
+	constructor(r : binary.stream, public header : CompDocHeader) {
 		const sector_size = header.fields.sector_size;
 
 		let		num		= header.fields.num_master;
@@ -94,7 +94,7 @@ export class CompDocMaster {
 			const data	= this.read_sector(r, sect);
 			const end	= data.length - 4;
 			sect 		= new DataView(data.buffer).getUint32(end);
-			binary.to_raw(this.msat).set(data.slice(0, end), p);
+			binary.to_raw(this.msat).set(data.subarray(0, end), p);
 			p += end;
 		}
 
@@ -123,11 +123,11 @@ export class CompDocMaster {
 	short_size()	{ return 1 << this.header.fields.short_size; }
 	next(id : number)	{ return this.nsat[id]; }
 
-	read_sector(r : binary.reader, id : number, len : number = this.sector_size()) : Uint8Array {
+	read_sector(r : binary.stream, id : number, len : number = this.sector_size()) : Uint8Array {
 		return r.seek(this.header.sector_offset(id)).read_buffer(len);
 	}
 
-	chain_length(r : binary.reader, id : number) : number {
+	chain_length(r : binary.stream, id : number) : number {
 		const	ss		= this.sector_size();
 		let		size	= 0;
 		while (id != SecID.ENDOFCHAIN) {
@@ -137,7 +137,7 @@ export class CompDocMaster {
 		return size;
 	}
 
-	read_chain(r : binary.reader, id : number, buffer : Uint8Array) {
+	read_chain(r : binary.stream, id : number, buffer : Uint8Array) {
 		const	ss	= this.sector_size();
 		let		p	= 0;
 		while (p < buffer.length && id != SecID.ENDOFCHAIN) {
@@ -148,7 +148,7 @@ export class CompDocMaster {
 		}
 	}
 
-	read_chain2(r : binary.reader, id : number, buffer : Uint8Array) {
+	read_chain2(r : binary.stream, id : number, buffer : Uint8Array) {
 		if (buffer.length >= this.header.fields.min_size)
 			return this.read_chain(r, id, buffer);
 
@@ -156,7 +156,7 @@ export class CompDocMaster {
 		let		p	= 0;
 		while (id != SecID.ENDOFCHAIN) {
 			const r = Math.min(ss, buffer.length - p);
-			buffer.set(this.shortcont.slice(ss * id, ss * id + r), p);
+			buffer.set(this.shortcont.subarray(ss * id, ss * id + r), p);
 			p		+= r;
 			id		= this.ssat[id];
 		}
@@ -167,13 +167,13 @@ export class CompDocMaster {
 export class CompDocReader extends CompDocMaster {
 	public entries : CompDocDirEntry[] = [];
 
-	constructor(public reader : binary.reader, header : CompDocHeader) {
+	constructor(public reader : binary.stream, header : CompDocHeader) {
 		super(reader, header);
 		const first_sector	= header.fields.first_sector;
 		const entry_len		= this.chain_length(reader, first_sector);
 		const dir_buff 		= new Uint8Array(entry_len);
 		this.read_chain(reader, first_sector, dir_buff);
-		const r2 = new binary.reader(dir_buff);
+		const r2 = new binary.stream(dir_buff);
 
 		for (let i = 0; i < entry_len / 128; i++)
 			this.entries[i] = new CompDocDirEntry(r2.seek(i * 128));

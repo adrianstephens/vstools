@@ -18,5 +18,14 @@ module.exports = {
 		'@typescript-eslint/no-explicit-any': 0,
 		'@typescript-eslint/explicit-module-boundary-types': 0,
 		'@typescript-eslint/no-non-null-assertion': 0,
-	}
+	},
+	overrides: [
+		{
+			files: ['**/*.js', '**/*.jsx'], // Specify the file patterns to ignore
+			rules: {
+				'no-undef': 'off',
+				'@typescript-eslint/no-var-requires': 'off',
+			}
+		}
+	]
 };

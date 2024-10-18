@@ -1,27 +1,27 @@
+import 'source-map-support/register';
 import * as vscode from 'vscode';
 import * as path from "path";
-import * as xml from "./xml";
-import * as fs from 'fs';
-import {Uri} from 'vscode';
+import * as nodefs from 'fs';
+import * as fs from './modules/fs';
+import * as xml from "./modules/xml";
+import * as utils from './modules/utils';
+import * as MsBuild from './MsBuild';
 import {Solution} from "./Solution";
-import {Project} from "./Project";
+import {Project, SolutionFolder} from "./Project";
 import {SolutionExplorerProvider} from "./SolutionView";
-import {array_remove, parseColor, colorString, rgb2hsv, hsv2rgb, replace} from './utils';
-import { alignCursors } from './align';
 
-let the_solution: Solution;
+const Uri	= vscode.Uri;
+export let vsdir = process.env.vsdir ?? '';
 
-export async function xml_load(uri : vscode.Uri) : Promise<xml.Element | undefined> {
-	console.log(`Loading ${uri.fsPath}`);
-	return vscode.workspace.fs.readFile(uri)
-		.then(bytes => new TextDecoder().decode(bytes))
-		.then(
-			content	=> xml.parse(content),
-			error	=> console.log(`Failed to load ${uri.fsPath} : ${error}`)
-		);
+//-----------------------------------------------------------------------------
+//	xml helpers
+//-----------------------------------------------------------------------------
+
+export async function xml_load(filename : string) : Promise<xml.Element | undefined> {
+	return fs.loadTextFile(filename).then(content	=> content ? xml.parse(content) : undefined);
 }
 
-export async function xml_save(uri : vscode.Uri, element: xml.Element) : Promise<void> {
+export async function xml_save(filename : string, element: xml.Element) : Promise<void> {
 /*
 	vscode.workspace.fs.writeFile(uri, Buffer.from(xml.js2xml(element), "utf-8"))
 		.then(
@@ -29,181 +29,469 @@ export async function xml_save(uri : vscode.Uri, element: xml.Element) : Promise
 			error	=> console.log(`Failed to save ${uri.fsPath} : ${error}`)
 		);
 */
-	fs.writeFile(uri.fsPath, Buffer.from(element.toString(), "utf-8"), error => {
+	nodefs.writeFile(filename, Buffer.from(element.toString(), "utf-8"), error => {
 		if (error)
-			console.log(`Failed to save ${uri.fsPath} : ${error}`);
+			console.log(`Failed to save ${filename} : ${error}`);
 	});
 }
 
-export class XMLCache {
-	public static cache : Record<string, Promise<xml.Element | void>> = {};
+export const XMLCache	= utils.makeCache(xml_load);
 
-	public static async get(fullpath: string) : Promise<xml.Element | void> {
-		if (!this.cache[fullpath])
-			this.cache[fullpath] = xml_load(vscode.Uri.file(fullpath));
-		return this.cache[fullpath];
-	}
-	public static remove(fullpath: string) {
-		delete this.cache[fullpath];
-	}
+//-----------------------------------------------------------------------------
+//	ui helpers
+//-----------------------------------------------------------------------------
+
+export async function yesno(message: string) {
+	return await vscode.window.showInformationMessage(message, { modal: true }, 'Yes', 'No') === 'Yes';
 }
 
-export class Extension {
-	static context: vscode.ExtensionContext;
-	static currentProject : Project | undefined;
+export async function searchOption<T extends vscode.QuickPickItem>(title: string, placeholder: string, initialSearch: string, itemsResolver: (search: string)=>Promise<T[]>) {
+	const input 		= vscode.window.createQuickPick<T>();
+	input.title 		= title;
+	input.placeholder 	= placeholder;
+	input.value 		= initialSearch;
+	input.items			= await itemsResolver(initialSearch);
 
-    private static fileWatchers: Record<string, [watcher: vscode.FileSystemWatcher, funcs: ((path: string)=>void)[]]> = {};
-    private static singleWatchers: Record<string, ((path: string)=>void)[]> = {};
+	input.show();
 
-	public static registerCommand(command: string, callback: (...args: any[]) => any, thisArg?: any) {
-		const disposable = vscode.commands.registerCommand(command, callback);
-		Extension.context.subscriptions.push(disposable);
-	}
+	return new Promise<T>(resolve => {
+		input.onDidChangeValue(async value => {
+			if (value)
+				input.items	= await itemsResolver(value);
+		});
 
-	public static absoluteUri(relativePath: string) {
-		return Uri.joinPath(Extension.context.extensionUri, relativePath);
-	}
-
-	public static onChange(fullpath: string, func: (path: string)=>void) {
-		const dir = path.dirname(fullpath);
-		if (!Extension.fileWatchers[dir]) {
-			const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, "*.*"));
-			watcher.onDidChange((uri: Uri) => {
-				const fullpath = uri.fsPath;
-				Extension.fileWatchers[path.dirname(fullpath)][1].forEach(func => func(fullpath));
-				Extension.singleWatchers[fullpath]?.forEach(func => func(fullpath));
-			});
-			Extension.fileWatchers[dir] = [watcher, []];
-		}
-		if (fullpath.indexOf('*') == -1) {
-			if (!Extension.singleWatchers[fullpath])
-				Extension.singleWatchers[fullpath] = [];
-			Extension.singleWatchers[fullpath].push(func);
-		} else {
-			Extension.fileWatchers[dir][1].push(func);
-		}
-	}
-
-	public static removeOnChange(fullpath: string, func: (path: string)=>void) {
-		const dir = path.dirname(fullpath);
-		if (Extension.fileWatchers[dir]) {
-			if (fullpath.indexOf('*') == -1) {
-				if (Extension.singleWatchers[fullpath])
-					array_remove(Extension.singleWatchers[fullpath], func);
+		input.onDidTriggerButton(item => {
+			if (item === vscode.QuickInputButtons.Back) {
+				//wizard?.prev();
+				resolve(input.activeItems[0]);
 			} else {
-				array_remove(Extension.fileWatchers[dir][1], func);
+				//wizard?.next();
+				resolve(input.activeItems[0]);
 			}
+			input.hide();
+		});
+
+		input.onDidAccept(() => {
+			//wizard?.next();
+			resolve(input.activeItems[0]);
+			input.hide();
+		});
+	});
+}
+
+export interface SubMenu<T extends vscode.QuickPickItem> extends vscode.QuickPickItem {
+	title?: string;
+	children: (T|SubMenu<T>)[];
+}
+
+function isSubMenu<T extends vscode.QuickPickItem>(item: T|SubMenu<T>): item is SubMenu<T> {
+	return 'children' in item;// as SubMenu<T>).children;
+}
+
+export async function hierarchicalMenu<T extends vscode.QuickPickItem>(menu: (T|SubMenu<T>)[], title?: string): Promise<T|undefined> {
+	const quick = vscode.window.createQuickPick<T|SubMenu<T>>();
+	quick.ignoreFocusOut = true;
+
+	async function recurse(menu: (T|SubMenu<T>)[], title: string, back: boolean): Promise<T|undefined> {
+		for (;;) {
+			quick.title		= title;
+			quick.items		= menu;
+			quick.buttons	= back ? [vscode.QuickInputButtons.Back] : [];
+			quick.show();
+
+			const item = await new Promise<T|SubMenu<T>|undefined>(resolve => {
+				quick.onDidTriggerButton(button => {
+					if (button === vscode.QuickInputButtons.Back)
+						resolve(undefined);
+				});
+				quick.onDidAccept(async () => {
+					resolve(quick.selectedItems[0]);
+				});
+	
+			});
+
+			if (!item)
+				return;
+			
+			if (!isSubMenu(item))
+				return item;
+
+			const item2 = await recurse(item.children, item.title ?? `Select a ${item.label}`, true);
+			if (item2)
+				return item2;
 		}
 	}
+	const item = await recurse(menu, title ?? '', false);
+	quick.dispose();
+	return item;
 
-	public static setCurrentProject(project : Project | undefined) {
-		this.currentProject = project;
+/*
+	for (;;) {
+		const item = await vscode.window.showQuickPick(menu, { placeHolder: `Select a ${label}` });
+		if (!item || item.label === '..')
+			return;
+		
+		if (!isSubMenu(item))
+			return item;
+
+		const item2 = await hierarchicalMenu<T>(item.children, item.title ?? `Select a ${item.label}`);
+		if (item2)
+			return item2;
 	}
-	public static getCurrentProject(solution: Solution, name?: string) : Project | undefined {
-		return name ? solution.projectByName(name) : this.currentProject;
+		*/
+}
+
+
+//-----------------------------------------------------------------------------
+//	general
+//-----------------------------------------------------------------------------
+
+async function substitutions(value: string): Promise<string> {
+	const re = /\${(([.\w]+)}|env:(\w+)}|command:([.\w]+)([,}]))/g;
+
+	return utils.async_replace_back(value, re, async (m: RegExpExecArray, right:string) => {
+		if (m[2]) {
+			//simple
+			if (m[2] == 'workspaceFolder')
+				return (vscode.workspace.workspaceFolders?.[0].uri.fsPath || '') + right;
+			return m[2] + right;
+
+		} else if (m[3]) {
+			//env
+			return (process.env[m[3]] || '') + right;
+
+		} else if (m[4]) {
+			if (m[5] == '}')
+				return vscode.commands.executeCommand(m[4]).then(result => result?.toString() + right);
+
+			const end = right.indexOf('}');
+			const args = right.substring(0, end).split(',');
+
+			return vscode.commands.executeCommand(m[4], ...args).then((result: any) => {
+				return result + right.substring(end + 1);
+			});
+		}
+		return "";
+	});
+}
+
+
+export function createTask(name: string, target: string, solution: string, properties: Record<string, string>, group?: vscode.TaskGroup): vscode.Task {
+	const definition: vscode.TaskDefinition = {
+		type:		'msbuild',
+		target,
+		solution,
+		properties
+	};
+
+	const task = new vscode.Task(
+		definition,
+		vscode.TaskScope.Workspace,
+		name,
+		'msbuild',
+		new vscode.ProcessExecution(
+			`${vsdir}\\MSBuild\\Current\\Bin\\msbuild.exe`, [
+				...Object.entries(properties).map(([k, v]) => `/property:${k}=${v}`),
+				`/target:${target}`,
+				solution
+			]
+		),
+		'$msbuild'		//problem matcher
+	);
+	task.group = group;
+	return task;
+}
+
+async function get_exec_subs(definition: vscode.TaskDefinition) {
+	const properties	= await Promise.all(Object.keys(definition.properties).map(async k => `/property:${k}=${await substitutions(definition.properties[k])}`));
+	const switches		= definition.switches ? await Promise.all(Object.keys(definition.switches).map(async k => `/${k}:${await substitutions(definition.switches[k])}`)) : [];
+
+	return new vscode.ProcessExecution(
+		`${vsdir}\\MSBuild\\Current\\Bin\\msbuild.exe`,
+		[
+			...properties,
+			...switches,
+			`/target:${definition.target}`,
+			await substitutions(definition.solution),
+		]
+	);
+}
+
+interface ProjectAndSolution {
+	project: 	Project;
+	solution:	Solution;
+}
+
+class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationProvider {
+	public current?:	ProjectAndSolution;
+	public explorer?: 	SolutionExplorerProvider;
+
+	private solutions:	Solution[] = [];
+	private tasks?:		Promise<vscode.Task[]>;
+
+	constructor(public context: vscode.ExtensionContext) {
+		this.registerCommand('vstools.addSolution',	(uri?: vscode.Uri) => {
+			if (uri) {
+				Solution.read(uri.fsPath).then(solution => {
+					if (solution)
+						this.addSolution(solution);
+				});
+			}
+		});
 	}
 
-	public static getIcon(name : string) {
+	public registerCommand(command: string, callback: (...args: any[]) => any, thisArg?: any) {
+		this.context.subscriptions.push(vscode.commands.registerCommand(command, callback));
+	}
+
+	public absoluteUri(relativePath: string) {
+		return Uri.joinPath(this.context.extensionUri, relativePath);
+	}
+
+	public getIcon(name : string) {
 		return {
-			light: Extension.absoluteUri(`media/${name}.svg`),
-			dark: Extension.absoluteUri(`media/dark/${name}.svg`)
+			light: this.absoluteUri(`assets/${name}.svg`),
+			dark: this.absoluteUri(`assets/dark/${name}.svg`)
 		};
 	}
-}
 
-async function makeDarkIcons(from:Uri, to:Uri) {
-	function process_colour(colour: string) : string {
-		if (colour.startsWith("#")) {
-			const	rgb = parseColor(colour);
-			const	hsv = rgb2hsv(rgb[0], rgb[1], rgb[2]);
-			if (hsv[1] < 0.5)
-				return colorString(hsv2rgb(hsv[0], hsv[1], 1 - hsv[2]));
+	public getProjectAndSolution(projname?: string) : ProjectAndSolution | undefined {
+		if (!projname)
+			return this.current;
+
+		if (this.current) {
+			const project = this.current.solution.projectByName(projname);
+			if (project)
+				return {project, solution: this.current.solution};
 		}
-		return colour;
-	}
-	function process_style(style: string) {
-		return replace(style, /(fill|stroke)\s*:\s*([^;]+)/g, (m : RegExpExecArray) => m[1] + ':'+ process_colour(m[2]));
-	}
-	function process(element: xml.Element) {
-		if (element.attributes) {
-			if (element.attributes.fill)
-				element.attributes.fill = process_colour(element.attributes.fill.toString());
-			if (element.attributes.stroke)
-				element.attributes.stroke = process_colour(element.attributes.stroke.toString());
-			if (element.attributes.style)
-				element.attributes.style = process_style(element.attributes.style.toString());
-		}
-		for (const i of element.children) {
-			if (xml.isElement(i)) {
-				if (i.name === "style" && xml.isText(i.children[0]))
-					i.children[0] = process_style(i.children[0]);
-				process(i as xml.Element);
-			}
+
+		for (const solution of this.solutions) {
+			const project = solution.projectByName(projname);
+			if (project)
+				return {project, solution};
 		}
 	}
 
-	vscode.workspace.fs.createDirectory(to)
-	.then(() => vscode.workspace.fs.readDirectory(from))
-	.then(async dir => {
-		for (const file of dir) {
-			if (file[1] === vscode.FileType.File && path.extname(file[0]) == '.svg') {
-				await xml_load(Uri.joinPath(from, file[0])).then(doc => {
-					if (doc?.firstElement()?.name === "svg") {
-						process(doc);
-						xml_save(Uri.joinPath(to, file[0]), doc);
+	public getProject(projname?: string) : Project | undefined {
+		return this.getProjectAndSolution(projname)?.project;
+	}
+
+
+    provideTasks(): Promise<vscode.Task[]> {
+		if (!vscode.workspace.getConfiguration('msbuild').get<boolean>('autoDetect'))
+			return Promise.resolve([]);
+
+		if (!this.tasks) {
+			this.tasks = (async () => {
+				const tasks: vscode.Task[] = [];
+
+				const properties = {
+					Configuration:	"${command:vstools.configuration}",
+					Platform:		"${command:vstools.platform}"
+				};
+
+				for (const solution of this.solutions) {
+					const solutionPath = solution.fullpath;
+					// Solution-level tasks
+					tasks.push(createTask("Build Solution", "Build", solutionPath, properties, vscode.TaskGroup.Build));
+					tasks.push(createTask("Clean Solution", "Clean", solutionPath, properties, vscode.TaskGroup.Clean));
+					tasks.push(createTask("Rebuild Solution", "Rebuild", solutionPath, properties, vscode.TaskGroup.Rebuild));
+
+					// Startup project tasks
+					tasks.push(createTask("Build Startup Project", '`${command:vstools.startupProject}', solutionPath, properties, vscode.TaskGroup.Build));
+					//tasks.push(createTask("Run Startup Project", '${command:vstools.startupProject}:Run', solutionPath, properties));
+					//tasks.push(createTask("Debug Startup Project", '${command:vstools.startupProject}:RunDebug', solutionPath, properties));
+
+					// Project-level tasks
+					for (const project of Object.values(solution.projects)) {
+						if (!(project instanceof SolutionFolder)) {
+							tasks.push(createTask(`Build ${project.name}`, `${project.name}`, solutionPath, properties, vscode.TaskGroup.Build));
+							tasks.push(createTask(`Clean ${project.name}`, `${project.name}:Clean`, solutionPath, properties, vscode.TaskGroup.Clean));
+							tasks.push(createTask(`Rebuild ${project.name}`, `${project.name}:Rebuild`, solutionPath, properties, vscode.TaskGroup.Rebuild));
+						}
 					}
+				}
+
+	/*
+				for (const project of Object.values(this.solution.projects)) {
+					for (const i in project.configuration) {
+						const c = project.configuration[i];
+						if (!c.build)
+							continue;
+
+						// use Solution's version
+						const parts 	= i.split('|');
+						const config 	= this.solution.configurationList()[+parts[0]];
+						const platform	= this.solution.platformList()[+parts[1]];
+
+						const definition = {
+							type: 		'msbuild',
+							properties: {
+								//VisualStudioVersion:"17.0",
+								Configuration:	config,
+								Platform: 		platform,
+							},
+							target: 	project.name,
+							solution: 	this.solution.fullpath,
+						};
+						const task = new vscode.Task(
+							definition,
+							vscode.TaskScope.Workspace,	//scope
+							`${project.name} ${config}|${platform}`,	//name
+							'msbuild',
+							this.get_exec(definition),
+							'$msbuild',									//problem matcher
+						);
+						task.group = vscode.TaskGroup.Build;
+
+						tasks.push(task);
+					}
+				}
+				*/
+				return tasks;
+			})();
+		}
+		return this.tasks;
+    }
+    async resolveTask(task: vscode.Task): Promise<vscode.Task | undefined> {
+		if (task.definition.type === 'msbuild') {
+			return new vscode.Task(
+				task.definition,
+				vscode.TaskScope.Workspace,	//scope
+				task.name,
+				task.source,
+				await get_exec_subs(task.definition),
+				task.problemMatchers,
+			);
+		}
+		return undefined;
+    }
+
+	async provideDebugConfigurations(): Promise<vscode.DebugConfiguration[]> {
+		const configs: vscode.DebugConfiguration[] = [];
+
+        // Generate debug configurations for each project
+		for (const solution of this.solutions) {
+			for (const project of Object.values(solution.projects)) {
+				const settings = project.debug(0);
+				configs.push({...settings,
+					name: `Debug ${project.name}`,
+					request: 'launch',
+					stopAtEntry: settings.stopAtEntry,
+					cwd: '${workspaceFolder}',
+					environment: settings.environment,
+					console: 'externalTerminal'
 				});
 			}
 		}
-	});
-}
+		return configs;
+    }
 
-function VSDir(filepath : string | undefined) {
-	return path.dirname(filepath || "") + path.sep;
-}
+	async resolveDebugConfiguration(folder: vscode.WorkspaceFolder | undefined, debugConfiguration: vscode.DebugConfiguration) {
+		if (debugConfiguration.program.startsWith('${vstools:')) {
+			const parsed = (await substitutions(debugConfiguration.program.slice(10, -1))).split(',');
+			const settings : Record<string, string> = Object.fromEntries(parsed.filter(i => i.includes('=')).map(i => i.split('=')));
+			if (settings.Configuration?.includes('|')) {
+				const [c, p] = settings.Configuration.split('|');
+				settings.Configuration = c;
+				settings.Platform = p;
+			}
+			const project = this.getProject(parsed[0]);
+			return {
+				...debugConfiguration,
+				...await project?.debug(settings)
+			};
+		}
+		return debugConfiguration;
+	}
 
-function Settings(solution: Solution, project?: string) {
-	return Extension.getCurrentProject(solution, project)?.configuration[solution.activeConfiguration.fullName];
-}
+	resolveDebugConfigurationWithSubstitutedVariables(folder: vscode.WorkspaceFolder | undefined, debugConfiguration: vscode.DebugConfiguration) {
+		return debugConfiguration;
+	}
 
+	
+	public addSolution(solution: Solution) {
+		if (this.solutions.length == 0) {
+			this.current	= {project: solution.startup!, solution};
+			this.explorer	= new SolutionExplorerProvider();
 
-export function activate(context: vscode.ExtensionContext) {
-	console.log("vstools activated");
-	Extension.context = context;
+			vscode.commands.executeCommand('setContext', 'vstools.loaded', true);
 
-	Extension.registerCommand('vstools.align', alignCursors);
-
-	const dark_dir = Extension.absoluteUri('media/dark');
-//	makeDarkIcons(Extension.absoluteUri('media'), dark_dir);
-	vscode.workspace.fs.stat(dark_dir).then(undefined, () => makeDarkIcons(Extension.absoluteUri('media'), dark_dir));
-
-	vscode.workspace.findFiles('*.sln').then(slns => {
-		if (slns.length === 1) {
-			Solution.read(slns[0].fsPath).then(solution => {
-				if (solution) {
-					the_solution = solution;
-					vscode.commands.executeCommand('setContext', 'vstools.loaded', true);
-					new SolutionExplorerProvider(solution);
-
-					Extension.registerCommand('vstools.solutionPath', 	() => solution.fullpath);
-					Extension.registerCommand('vstools.solutionDir', 	() => VSDir(solution.fullpath));
-					Extension.registerCommand('vstools.startupProject',	() => solution.startupProject?.name);
-					Extension.registerCommand('vstools.projectDir', 	(project?: string) => VSDir(Extension.getCurrentProject(solution, project)?.fullpath));
-					Extension.registerCommand('vstools.projectName', 	() => Extension.currentProject?.name);
-					Extension.registerCommand('vstools.configuration', 	() => solution.activeConfiguration?.Configuration);
-					Extension.registerCommand('vstools.platform', 		() => solution.activeConfiguration?.Platform);
-					Extension.registerCommand('vstools.projectConfiguration', (project?: string) => Settings(solution, project)?.[0].fullName);
-					Extension.registerCommand('vstools.projectSetting', (setting: string) => {
-						const project = solution.startupProject;
-						if (project)
-							return project.getSetting(project.configuration[solution.activeConfiguration.fullName]?.[0].properties || {}, setting);
-					});
+			//this.registerCommand('vstools.solutionPath', 	() => solution.fullpath);
+			//this.registerCommand('vstools.solutionDir', 		() => VSDir(solution.fullpath));
+			this.registerCommand('vstools.startupExecutable',	() =>
+				this.current?.solution.startup?.name
+			);
+			this.registerCommand('vstools.startupProject',	() =>
+				this.current?.solution.startup?.name ?? ''
+			);
+			this.registerCommand('vstools.projectDir', 	(project?: string) => {
+				const proj = this.getProject();
+				if (proj)
+					return path.dirname(proj.fullpath) + path.sep;
+			});
+			this.registerCommand('vstools.projectName', 	() =>
+				this.current?.project.name
+			);
+			this.registerCommand('vstools.configuration', 	() => 
+				this.current?.solution.activeConfiguration.Configuration
+			);
+			this.registerCommand('vstools.platform', 		() =>
+				this.current?.solution?.activeConfiguration.Platform
+			);
+			this.registerCommand('vstools.projectConfiguration', (project?: string) => {
+				const ps = this.getProjectAndSolution(project);
+				if (ps) {
+					const config = ps.project.configuration[ps.solution.active.join('|')];
+					return [config.Configuration, config.Platform].join('|');
 				}
 			});
+			this.registerCommand('vstools.projectSetting', (setting: string) => {
+				const ps = this.current ?? {project:solution.startup, solution};
+				if (ps.project) {
+					const config = ps.project.configuration[ps.solution.active.join('|')];
+					return ps.project.getSetting({"Configuration": config.Configuration, "Platform": config.Platform}, setting);
+				}
+			});
+
+			this.context.subscriptions.push(vscode.tasks.registerTaskProvider('msbuild', this));
+			this.context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('cppvsdbg', this, vscode.DebugConfigurationProviderTriggerKind.Dynamic));
 		}
-	});
+
+		this.solutions.push(solution);
+		this.context.subscriptions.push(solution);
+		this.explorer!.addSolution(solution);
+	}
 }
 
-export async function deactivate() {
-	return the_solution.dispose();
+
+//-----------------------------------------------------------------------------
+//	main entry
+//-----------------------------------------------------------------------------
+
+export let Extension: ExtensionClass;
+
+export function activate(context: vscode.ExtensionContext) {
+	Extension = new ExtensionClass(context);
+
+	if (!vsdir) {
+		MsBuild.Locations.GetFoldersInVSInstalls().then(vs => {
+			if (vs.length)
+				vsdir = vs.at(-1)!;
+		});
+	}
+
+	if (vscode.workspace.workspaceFolders) {
+		vscode.workspace.findFiles('*.sln').then(async slns =>
+			slns.map(i => Solution.read(i.fsPath).then(solution => solution && Extension.addSolution(solution)))
+		);
+
+		fs.onChange(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '*.sln'), (fullpath, mode) => {
+			if (mode === fs.Change.created)
+				Solution.read(fullpath).then(solution => solution && Extension.addSolution(solution));
+		});
+	}
 }
+
+//export async function deactivate() {
+//}

@@ -1,25 +1,22 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "./modules/fs";
+import * as nuget from './nuget';
+import * as utils from "./modules/utils";
 
-import {compare} from "./utils";
-import {getStat, copyFile, copyDirectory} from "./fs";
-import {TreeItemCollapsibleState, Uri, ThemeColor} from "vscode";
-import {Extension} from "./extension";
-import {Solution, getProjectIconName} from "./Solution";
-import {Project, Configuration, SolutionFolder, Folder, FolderTree, ProjectItemEntry, makeFileEntry} from "./Project";
-import {MsBuildProject, Items, metadata_value} from "./MsBuildProject";
+import * as MsBuild from "./MsBuild";
 import * as SettingsView from "./SettingsView";
 
-// Fast, simple and insecure hash function
-export function fasthash(str: string): string {
-	let hash = 0;
-	for (let i = 0; i < str.length; i++) {
-		const char = str.charCodeAt(i);
-		hash = (hash << 5) - hash + char;
-		hash &= hash; // Convert to 32bit integer
-	}
-	return new Uint32Array([hash])[0].toString(36);
- }
+import {Extension, searchOption, SubMenu, hierarchicalMenu, yesno} from "./extension";
+import {Solution, getProjectIconName} from "./Solution";
+import {Project, Folder, FolderTree, ProjectItemEntry, makeFileEntry} from "./Project";
+import {MsBuildProjectBase} from "./MsBuildProject";
+import {VCProject} from './vcxproj';
+import {templates, Template} from "./Templates";
+
+const TreeItemCollapsibleState = vscode.TreeItemCollapsibleState;
+type Uri = vscode.Uri;
+
 
 class TreeItemHighlight implements vscode.TreeItemLabel {
 	highlights?: [number, number][];
@@ -35,25 +32,16 @@ export abstract class TreeItem extends vscode.TreeItem {
 	constructor(
 		public parent: TreeItem | null,
 		label: string | vscode.TreeItemLabel,
-		collapsibleState: TreeItemCollapsibleState = TreeItemCollapsibleState.None,
+		collapsibleState = TreeItemCollapsibleState.None,
 		path?: string,
 	) {
 		super(label, collapsibleState);
-		//this.id = this.createId();
 		if (path)
-			this.resourceUri = Uri.file(path);
+			this.resourceUri = vscode.Uri.file(path);
 	}
 
 	public get label_text() {
 		return typeof(this.label) == 'string' ? this.label : this.label?.label;
-	}
-
-	public collapse(): void {
-		if (this.collapsibleState !== TreeItemCollapsibleState.None) {
-			if (this.children) 
-				this.children.forEach(c => c.collapse());
-			this.collapsibleState = TreeItemCollapsibleState.Collapsed;
-		}
 	}
 
 	public clearChildren(): void {
@@ -66,14 +54,7 @@ export abstract class TreeItem extends vscode.TreeItem {
 		return Promise.resolve([]);
 	}
 
-	protected createId(): string {
-		let id = fasthash(`${this.label}-${this.resourceUri?.fsPath ?? ''}`);
-		if (this.parent)
-			id = this.parent.id + '-' + id;
-		return id;
-	}
-
-	public findByUri(uri : Uri, type?: string) : TreeItem | undefined{
+	public findByUri(uri: Uri, type?: string): TreeItem | undefined{
 		if (this.children) {
 			for (const i of this.children) {
 				const i2 = i.findByUri(uri, type);
@@ -88,7 +69,7 @@ export abstract class TreeItem extends vscode.TreeItem {
 		}
 	}
 
-	public highlight(highlight:boolean) : boolean {
+	public highlight(highlight:boolean): boolean {
 		const highlit = this.label instanceof TreeItemHighlight;
 		if (highlight != highlit) {
 			this.label = highlight ? new TreeItemHighlight(this.label as string) : (this.label as TreeItemHighlight).label;
@@ -99,26 +80,24 @@ export abstract class TreeItem extends vscode.TreeItem {
 }
 
 class FileTreeItem extends TreeItem {
-    constructor(parent : TreeItem, fullPath: string) {
+	constructor(parent: TreeItem, fullPath: string) {
 		super(parent, path.basename(fullPath), TreeItemCollapsibleState.None, fullPath);
 		this.contextValue = 'file';
-		this.command = {title: 'open', command: 'vstools.open', arguments: [this] };
+		this.command = {title: 'open', command: 'vstools.select_open', arguments: [this] };
 	}
 }
 
 class FileEntryTreeItem extends FileTreeItem {
-    constructor(parent : TreeItem, public entry: ProjectItemEntry) {
+	constructor(parent: TreeItem, public entry: ProjectItemEntry) {
 		super(parent, entry.data.fullPath);
 	}
 }
 
-function createFolders(parent : TreeItem, folder: Folder, foldericon: any) {
-	const children : TreeItem[] = [];
-	for (const i of folder.folders.sort((a, b) => compare(a.name, b.name)))
-		children.push(new FolderTreeItem(parent, i, foldericon));
-	for (const i of folder.entries.sort((a, b) => compare(a.name, b.name))) {
+function createFolders(parent: TreeItem, folder: Folder, foldericon: any) {
+	const children: TreeItem[] = folder.folders.sort((a, b) => utils.compare(a.name, b.name)).map(i => new FolderTreeItem(parent, i, foldericon));
+	for (const i of folder.entries.sort((a, b) => utils.compare(a.name, b.name))) {
 		const item = new FileEntryTreeItem(parent, i);
-		if (metadata_value(i, 'ExcludedFromBuild'))
+		if (MsBuild.hasMetadata(i) && i.value('ExcludedFromBuild'))
 			item.iconPath = new vscode.ThemeIcon("error");
 		children.push(item);
 	}
@@ -126,227 +105,244 @@ function createFolders(parent : TreeItem, folder: Folder, foldericon: any) {
 }
 
 class FolderTreeItem extends TreeItem {
-    constructor(parent : TreeItem, public folder: Folder, foldericon: any) {
+	constructor(parent: TreeItem, public folder: Folder, foldericon: any) {
 		super(parent, folder.name, TreeItemCollapsibleState.Collapsed);
 		this.iconPath = foldericon;
 		this.contextValue = 'folder';
 	}
 	createChildren(): Promise<TreeItem[]> {
-        return Promise.resolve(createFolders(this, this.folder, this.iconPath));
-    }
+		return Promise.resolve(createFolders(this, this.folder, this.iconPath));
+	}
 }
 
 class ImportsGroupTreeItem extends TreeItem {
-    constructor(parent : TreeItem, label:string, public imports: string[]) {
+	constructor(parent: TreeItem, label:string, public imports: string[]) {
 		super(parent, label, TreeItemCollapsibleState.Collapsed);
 		this.iconPath = Extension.getIcon('PropertiesFolderClosed');
 	}
 	createChildren(): Promise<TreeItem[]> {
-		const children : TreeItem[] = [];
-		for (const i of this.imports)
-			children.push(new FileTreeItem(this, i));
-        return Promise.resolve(children);
-    }
+		return Promise.resolve(this.imports.map(i => new FileTreeItem(this, i)));
+	}
 }
 class ImportsTreeItem extends TreeItem {
-    constructor(parent : TreeItem, public project: MsBuildProject) {
+	constructor(parent: TreeItem, public project: MsBuildProjectBase) {
 		super(parent, "imports", TreeItemCollapsibleState.Collapsed);
 		this.iconPath = Extension.getIcon('PropertiesFolderClosed');
 	}
 	createChildren(): Promise<TreeItem[]> {
-		const children : TreeItem[] = [];
-		for (const i in this.project.imports) {
+		const children: TreeItem[] = [];
+		for (const i in this.project.msbuild.imports) {
 			if (i != 'all')
-				children.push(new ImportsGroupTreeItem(this, i || 'other', this.project.imports[i]));
+				children.push(new ImportsGroupTreeItem(this, i || 'other', this.project.msbuild.imports[i]));
 		}
-        return Promise.resolve(children);
-    }
+		return Promise.resolve(children);
+	}
+}
+
+class PackageTreeItem extends TreeItem {
+	constructor(parent: TreeItem, name: string) {
+		super(parent, name, TreeItemCollapsibleState.None);
+	}
+}
+
+class PackagesTreeItem extends TreeItem {
+	constructor(parent: TreeItem, public project: MsBuildProjectBase) {
+		super(parent, "packages", TreeItemCollapsibleState.Collapsed);
+		this.iconPath = Extension.getIcon('ReferenceFolderClosed');
+	}
+	createChildren(): Promise<TreeItem[]> {
+		return Promise.resolve(this.project.msbuild.items.PackageReference.entries.map(i => new PackageTreeItem(this, i.name)));
+	}
 }
 
 class DependencyTreeItem extends TreeItem {
-    constructor(parent : TreeItem, project: Project) {
+	constructor(parent: TreeItem, project: Project) {
 		super(parent, path.basename(project.name), TreeItemCollapsibleState.None, project.fullpath);
 	}
 }
 
 class DependenciesTreeItem extends TreeItem {
-    constructor(parent : TreeItem, public dependencies: Project[]) {
+	constructor(parent: TreeItem, public project: Project) {
 		super(parent, "references", TreeItemCollapsibleState.Collapsed);
 		this.iconPath = Extension.getIcon('ReferenceFolderClosed');
 	}
 	createChildren(): Promise<TreeItem[]> {
-		const children : TreeItem[] = [];
-		for (const i of this.dependencies)
-			children.push(new DependencyTreeItem(this, i));
-        return Promise.resolve(children);
-    }
+		return Promise.resolve(this.project.dependencies.map(i => new DependencyTreeItem(this, i)));
+	}
 }
-
+/*
 class ItemGroupTreeItem extends TreeItem {
-    constructor(parent : TreeItem, label : string, public items: Items) {
+	constructor(parent: TreeItem, label: string, public items: Items) {
 		super(parent, label, TreeItemCollapsibleState.Collapsed);
 		this.iconPath = Extension.getIcon('FolderClosed');//vscode.ThemeIcon.Folder;
 		this.contextValue = 'items';//items.schema ? 'items' : 'items_noschema';
 	}
 	createChildren(): Promise<TreeItem[]> {
-		const children : TreeItem[] = [];
+		const children: TreeItem[] = [];
 		for (const i of this.items.entries) {
 			if (i.data.fullPath)
 				children.push(new FileEntryTreeItem(this, i));
 		}
-        return Promise.resolve(children);
-    }
+		return Promise.resolve(children);
+	}
 }
-
+*/
 class ProjectTreeItem extends TreeItem {
-	public view_by : string = 'filter';
+	public view_by: string = 'filter';
 
-    constructor(private provider: SolutionExplorerProvider, parent : TreeItem, public project : Project, startup: boolean = false) {
+	constructor(private provider: SolutionExplorerProvider, parent: TreeItem, public project: Project, startup: boolean = false) {
 		const name = path.basename(project.name);
 		super(parent, startup ? new TreeItemHighlight(name) : name, TreeItemCollapsibleState.Collapsed, project.fullpath);
 
-		if (project instanceof SolutionFolder) {
-			this.iconPath = Extension.getIcon('FolderClosed');//vscode.ThemeIcon.Folder;
-		} else if (this.project instanceof MsBuildProject) {
-			const iconname = getProjectIconName(this.project.type);
-			if (iconname)
-				this.iconPath = Extension.getIcon('CPPProjectNode');
+		const iconname = getProjectIconName(this.project.type);
+		if (iconname)
+			this.iconPath = Extension.getIcon(iconname);
+			this.contextValue = 'solution-folder';
+
+		if (this.project instanceof MsBuildProjectBase) {
+			this.command = {title: 'select', command: 'vstools.select', arguments: [this] };
 			this.contextValue = 'project';
-			Extension.onChange(project.fullpath + ".filters", (path:string) => {
+			fs.onChange(project.fullpath + ".filters", (path:string) => {
 				provider.recreate(this);
 			});
 		}
+		project.onDidChange(() => {
+			provider.recreate(this);
+		});
+
 	}
 
-	createChildren(): Promise<TreeItem[]> {
+	async createChildren(): Promise<TreeItem[]> {
 		return this.project.ready.then(async () => {
-			let children : TreeItem[] = [];
+			let children: TreeItem[] = [];
 
 			if (this.project.dependencies.length)
-				children.push(new DependenciesTreeItem(this, this.project.dependencies));
+				children.push(new DependenciesTreeItem(this, this.project));
 
-			const childProjects = this.project.childProjects;
-			for (const i in childProjects) {
-				const child = childProjects[i];
-				children.push(new ProjectTreeItem(this.provider, this, child));
-			}
+			if (this.project instanceof MsBuildProjectBase && ('PackageReference' in this.project.msbuild.items))
+				children.push(new PackagesTreeItem(this, this.project));
+
+			for (const i of this.project.childProjects)
+				children.push(new ProjectTreeItem(this.provider, this, i));
 			
-			if (this.project instanceof MsBuildProject) {
-				const msbuild = this.project as MsBuildProject;
-				if (Object.keys(msbuild.imports).length)
-					children.push(new ImportsTreeItem(this, msbuild));
+			if (this.project instanceof MsBuildProjectBase && Object.keys(this.project.msbuild.imports).length)
+				children.push(new ImportsTreeItem(this, this.project));
 
-				switch (this.view_by) {
-					case 'filter': {
-						const tree = await msbuild.getFolders(true);
-						if (tree)
-							children = children.concat(createFolders(this, tree.root, Extension.getIcon('FilterFolderClosed')));
-						break;
-					}
-					case 'folder': {
-						const tree = await msbuild.getFolders(false);
-						if (tree)
-							children = children.concat(createFolders(this, tree.root, Extension.getIcon('FolderClosed')));
-						break;
-					}
-					case 'items':
-						for (const i in msbuild.items) {
-							if (msbuild.items[i].entries.find(i => i.data.fullPath))
-								children.push(new ItemGroupTreeItem(this, i, msbuild.items[i]));
-						}
-						break;
-				}
-			}
-
-			for (const i of this.project.solutionItems)
-				children.push(new FileEntryTreeItem(this, i));
+			const tree = await this.project.getFolders(this.view_by);
+			const icons: Record<string,any> = {
+				'filter':	Extension.getIcon('FilterFolderClosed'),
+				'folder':	Extension.getIcon('FolderClosed'),
+				'items':	Extension.getIcon('PropertiesFolderClosed'),
+			};
+			children = children.concat(createFolders(this, tree.root, icons[this.view_by]));
 
 			return children;
 		});
-    }
+	}
 }
 
 class ConfigTreeItem extends TreeItem {
-	constructor(parent : TreeItem, label: string) {
+	constructor(parent: TreeItem, label: string, public index: number) {
 		super(parent, label);
 		this.command = {title: 'select', command: 'vstools.setConfig', arguments: [this] };
 	}
 }
 class ConfigsTreeItem extends TreeItem {
-    constructor(parent : TreeItem, public solution : Solution) {
+	constructor(parent: TreeItem, public solution: Solution) {
 		super(parent, "configuration: " + solution.activeConfiguration.Configuration, TreeItemCollapsibleState.Collapsed);
-		this.iconPath = new vscode.ThemeIcon("star");
+		this.iconPath	= new vscode.ThemeIcon("star");
+		//this.id			= 'configuration';
 	}
-    createChildren(): Promise<TreeItem[]> {
-		const unique = [...new Set(this.solution.configurations.map(i => i.Configuration))];
-        return Promise.resolve(unique.map(i => new ConfigTreeItem(this, i)));
-    }
+	createChildren(): Promise<TreeItem[]> {
+		return Promise.resolve(this.solution.configurationList().map((v, i) => new ConfigTreeItem(this, v, i)));
+	}
 }
 
 class PlatformTreeItem extends TreeItem {
-	constructor(parent : TreeItem, label: string) {
+	constructor(parent: TreeItem, label: string, public index: number) {
 		super(parent, label);
 		this.command = {title: 'select', command: 'vstools.setPlatform', arguments: [this] };
 	}
 }
 class PlatformsTreeItem extends TreeItem {
-    constructor(parent : TreeItem, public solution : Solution) {
+	constructor(parent: TreeItem, public solution: Solution) {
 		super(parent, "platform: " + solution.activeConfiguration.Platform, TreeItemCollapsibleState.Collapsed);
-		this.iconPath = new vscode.ThemeIcon("star");
+		this.iconPath 	= new vscode.ThemeIcon("star");
+		//this.id			= 'platform';
 	}
-    createChildren(): Promise<TreeItem[]> {
-		const unique = [...new Set( this.solution.configurations.map(i => i.Platform))];
-        return Promise.resolve(unique.map(i => new PlatformTreeItem(this, i)));
-    }
+	createChildren(): Promise<TreeItem[]> {
+		return Promise.resolve(this.solution.platformList().map((v, i) => new PlatformTreeItem(this, v, i)));
+	}
 }
 
 function project_compare(a: Project, b: Project) {
-	const am = a instanceof MsBuildProject;
-	const bm = b instanceof MsBuildProject;
+	const am = a instanceof MsBuildProjectBase;
+	const bm = b instanceof MsBuildProjectBase;
 	return am != bm
 		? (am ? 1 : -1)
-		: compare(a.name, b.name);
+		: utils.compare(a.name, b.name);
 }
 
 class SolutionTreeItem extends TreeItem {
-    constructor(private provider: SolutionExplorerProvider, public solution : Solution) {
+	constructor(private provider: SolutionExplorerProvider, public solution: Solution) {
 		super(null, path.basename(solution.fullpath), TreeItemCollapsibleState.Expanded, solution.fullpath);
 		this.contextValue = 'solution';
+		this.command = {title: 'select', command: 'vstools.select', arguments: [this] };
+		solution.onDidChange(what => {
+			switch (what) {
+				case 'startup':
+					for (const i of this.children || []) {
+						if ((i instanceof ProjectTreeItem) && i.highlight(i.project == this.solution.startup))
+							provider.refresh(i);
+					}
+					break;
+				case 'change':
+					provider.recreate(this);
+					break;
+				case 'remove':
+					provider.removeSolution(this.solution);
+					break;
+			}
+		});
 	}
 
-    createChildren(): Promise<TreeItem[]> {
-		const children : TreeItem[] = [];
+	createChildren(): Promise<TreeItem[]> {
+		const children: TreeItem[] = [];
 		children.push(new ConfigsTreeItem(this, this.solution));
 		children.push(new PlatformsTreeItem(this, this.solution));
 
+		for (const project of this.solution.childProjects.sort((a, b) => project_compare(a, b)))
+			children.push(new ProjectTreeItem(this.provider, this, project, project === this.solution.startup));
+/*
 		for (const id of Object.keys(this.solution.projects).sort((a, b) => project_compare(this.solution.projects[a], this.solution.projects[b]))) {
 			const project = this.solution.projects[id];
 			if (project.parent === this.solution)
-				children.push(new ProjectTreeItem(this.provider, this, project, project === this.solution.startupProject));
+				children.push(new ProjectTreeItem(this.provider, this, project, project === this.solution.startup));
 		}
-        return Promise.resolve(children);
-    }
+			*/
+		return Promise.resolve(children);
+	}
 }
 
 const SOLUTION_EXPLORER_MIME_TYPE = 'application/vnd.code.tree.solutionExplorer';
 const URI_LIST_MIME_TYPE = 'text/uri-list';
 
 class DataTransferItem extends vscode.DataTransferItem {
-	constructor(public items : TreeItem[]) {
+	constructor(public items: TreeItem[]) {
 		super(items);
 	}
 	asString(): Thenable<string> { return Promise.resolve(""); }
 	asFile(): vscode.DataTransferFile | undefined { return undefined; }
 }
 
-async function getFolder(item: TreeItem) : Promise<Folder | undefined> {
+async function getFolder(item: TreeItem): Promise<Folder | undefined> {
 	return item && item instanceof FolderTreeItem ? item.folder
-		: item && item instanceof ProjectTreeItem && item.project instanceof MsBuildProject ? (await item.project.getFolders(true))?.root
+		: item && item instanceof ProjectTreeItem && item.project instanceof MsBuildProjectBase ? (await item.project.getFolders('filter'))?.root
 		: undefined;
 }
 
 function addFile(fullPath: string, dest: Folder, filters?: FolderTree) {
-	const found = filters?.find_file(fullPath);
+	const found = filters?.findFile(fullPath);
 	if (found) {
 		found[0].remove(found[1]);
 		dest.add(found[1]);
@@ -355,10 +351,48 @@ function addFile(fullPath: string, dest: Folder, filters?: FolderTree) {
 	}
 }
 
-export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements vscode.TreeDataProvider<TreeItem>, vscode.TreeDragAndDropController<TreeItem> {//, vscode.FileDecorationProvider {
+interface TemplateItem extends vscode.QuickPickItem {
+	template?: Template;
+}
+
+function menuGroup(label: string, group?: Template[]): TemplateItem[] {
+	return group && group.length ? [
+		{label, kind: vscode.QuickPickItemKind.Separator},
+		...group.sort((a, b) => utils.compare(a.name, b.name)).map(t => ({label: t.name, template: t})),
+	] : [];
+}
+
+function menuTagGroup(label:string, baseTitle: string, group: Template[], tags: Set<string>): SubMenu<TemplateItem> {
+	let title;
+	if (tags.size) {
+		const keys = Array.from(tags.keys());
+		const last = keys.pop();
+		title = `${baseTitle} tagged with ${keys.join(', ')}${keys.length ? ' and ' : ''}${last}`;
+	} else {
+		title = baseTitle;
+	}
+	return {label, title, get children() { return menuTagGroupChildren(baseTitle, group, tags); } };
+}
+
+function menuTagGroupChildren(baseTitle: string, group: Template[], tags: Set<string>): (TemplateItem|SubMenu<TemplateItem>)[] {
+	const byTag: Record<string, Template[]> = {};
+	group.forEach(t => t.tags.forEach(i => {
+		if (!tags.has(i))
+			(byTag[i] ??= []).push(t);
+	}));
+	return [
+		{label: "By Tag", kind: vscode.QuickPickItemKind.Separator},
+		...Object.keys(byTag).map(i => menuTagGroup(i, baseTitle, byTag[i], new Set([...tags, i]))),
+		...Object.entries(utils.partition(group, t => t.language)).map(([i, group]) => menuGroup(i, group)).flat(),
+	];
+}
+
+
+export class SolutionExplorerProvider implements vscode.TreeDataProvider<TreeItem>, vscode.TreeDragAndDropController<TreeItem> {//, vscode.FileDecorationProvider {
+	private solutions: 		Solution[]	= [];
 	private treeView: 		vscode.TreeView<TreeItem>;
 	private children: 		TreeItem[]	= [];
-    public	dropMimeTypes:	string[]	= [SOLUTION_EXPLORER_MIME_TYPE, URI_LIST_MIME_TYPE];
+	public	dropMimeTypes:	string[]	= [SOLUTION_EXPLORER_MIME_TYPE, URI_LIST_MIME_TYPE];
 	public	dragMimeTypes:	string[]	= [URI_LIST_MIME_TYPE];
 
 	private _onDidChangeTreeData = new vscode.EventEmitter<TreeItem | undefined | null | void>();
@@ -370,28 +404,29 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 	public refresh(node?: TreeItem): void {
 		this._onDidChangeTreeData.fire(node);
 	}
-	public recreate(node: TreeItem): void {
-		node.clearChildren();
+	public recreate(node?: TreeItem): void {
+		if (node) {
+			node.clearChildren();
+		} else {
+			this.children.forEach(c => c.clearChildren());
+			this.children = [];
+		}
 		this._onDidChangeTreeData.fire(node);
-	}
-	public async collapse(node: TreeItem) {
-		node.collapsibleState = TreeItemCollapsibleState.Collapsed;
-		this.recreate(node);
 	}
 
 	public getTreeItem(element: TreeItem): vscode.TreeItem {
 		return element;
 	}
 
-	public getRootByContext(element: TreeItem, type : string) {
-		let i : TreeItem | null = element;
+	public getRootByContext(element: TreeItem, type: string) {
+		let i: TreeItem | null = element;
 		while (i && !(i.contextValue != type))
 			i = i.parent;
 		return i;
 	}
 
 	public getRootByClass(element: TreeItem, type: any) {
-		let i : TreeItem | null = element;
+		let i: TreeItem | null = element;
 		while (i && !(i instanceof type))
 			i = i.parent;
 		return i;
@@ -399,6 +434,10 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 
 	public getProject(item: TreeItem) {
 		return (this.getRootByClass(item, ProjectTreeItem) as ProjectTreeItem)?.project;
+	}
+
+	public getSolution(item: TreeItem) {
+		return (this.getRootByClass(item, SolutionTreeItem) as SolutionTreeItem)?.solution;
 	}
 
 	public getChildren(element?: TreeItem) {//}: Promise<TreeItem[]> | undefined {
@@ -415,7 +454,7 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 		}
 
 		if (!this.children.length)
-			this.children.push(new SolutionTreeItem(this, this.solution));
+			this.solutions.forEach(solution => this.children.push(new SolutionTreeItem(this, solution)));
 		return Promise.resolve(this.children);
 	}
 
@@ -442,18 +481,44 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 		}
 	}
 
-	constructor(public solution : Solution) {
-		//super(() => this.dispose());
-		const has : any = {
+	public async findCreate(node: TreeItem, uri: Uri): Promise<TreeItem|null> {
+		if	(node.resourceUri?.fsPath === uri.fsPath)
+			return node;
+
+		const children = await this.getChildren(node);
+		return children.length
+			? Promise.any(children.map(child => this.findCreate(child, uri).then(result => result??Promise.reject()))).catch(()=>null)
+			: null;
+	}
+
+	private setView(item: ProjectTreeItem, view_by: string) {
+		item.view_by = view_by;
+		this.recreate(item);
+		this.treeView.reveal(item, {expand: true});
+	}
+
+	public addSolution(solution: Solution) {
+		this.solutions.push(solution);
+		this.recreate();
+	}
+	public removeSolution(solution: Solution) {
+		if (utils.array_remove(this.solutions, solution))
+			this.recreate();
+	}
+
+	constructor() {
+		const has: any = {
 			hasOpen: 		["file", "project", "solution"],
 			hasCut: 		["file", "multi"],
 			hasCopy: 		["file", "multi"],
 			hasPaste: 		["folder"],
-			hasDelete: 		["file", "folder", "multi"],
+			hasDelete: 		["file", "folder", "project", "multi"],
 			hasRename: 		["folder"],
-			hasCreateFile: 	["folder", "project"],
-			hasCreateFolder:["folder", "project"],
+			hasAddFile: 	["folder", "project", "solution-folder"],
+			hasCreateFile: 	["folder", "project", "solution-folder"],
+			hasCreateFolder:["folder", "project", "solution", "solution-folder"],
 			hasSettings: 	["file", "project", "items", "solution"],
+			hasBuild: 		["project", "solution"],
 		};
 
 		for (const key in has)
@@ -469,16 +534,14 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 		this.treeView = vscode.window.createTreeView('vstools-view', options);
 
 		this.treeView.onDidChangeSelection(ev => {
-			let contextValue : string | undefined;
+			let contextValue: string | undefined;
 			if (ev.selection.length === 1) {
 				const sel = ev.selection[0];
 				contextValue = sel.contextValue;
-				if (has.hasSettings.indexOf(contextValue) !== -1) {
-					if (SettingsView.exists())
-						this.updateSettings(sel);
+				if (contextValue === 'file') {
+					const proj = this.getRootByClass(sel, ProjectTreeItem) 		as ProjectTreeItem;
+					Extension.current = {project: proj.project, solution: this.getSolution(proj)};
 				}
-				if (contextValue === 'file')
-					Extension.setCurrentProject(this.getProject(sel));
 			} else {
 				contextValue = 'multi';
 			}
@@ -503,22 +566,33 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 
 		Extension.registerCommand('vstools.open', async (item: TreeItem) => {
 			if (item.resourceUri)
-				vscode.window.showTextDocument(item.resourceUri);
+				vscode.commands.executeCommand('vscode.open', item.resourceUri);
+		});
+		Extension.registerCommand('vstools.select', async (item: TreeItem) => {
+			if (SettingsView.exists())
+				this.updateSettings(item);
+		});
+		Extension.registerCommand('vstools.select_open', async (item: TreeItem) => {
+			if (SettingsView.exists() && has.hasSettings.indexOf(item.contextValue) !== -1) {
+				this.updateSettings(item);
+			} else if (item.resourceUri) {
+				vscode.commands.executeCommand('vscode.open', item.resourceUri);
+			}
 		});
 
-		Extension.registerCommand('vstools.setConfig', async (item: TreeItem) => {
+		Extension.registerCommand('vstools.setConfig', async (item: ConfigTreeItem) => {
 			const parent	= item.parent as ConfigsTreeItem;
-			const value		= item.label as string;
-			this.solution.activeConfiguration = new Configuration(value, this.solution.activeConfiguration.Platform);
-			parent.label = "configuration: " + value;
-			this.collapse(parent);
+			const solution	= this.getSolution(parent);
+			solution.active[0] = item.index;
+			parent.label = "configuration: " + solution.activeConfiguration.Configuration;
+			this.recreate(parent);
 		});
-		Extension.registerCommand('vstools.setPlatform', async (item: TreeItem) => {
+		Extension.registerCommand('vstools.setPlatform', async (item: PlatformTreeItem) => {
 			const parent	= item.parent as PlatformsTreeItem;
-			const value		= item.label as string;
-			this.solution.activeConfiguration = new Configuration(this.solution.activeConfiguration.Configuration, value);
-			parent.label = "platform: " + value;
-			this.collapse(parent);
+			const solution	= this.getSolution(parent);
+			solution.active[1] = item.index;
+			parent.label = "platform: " + solution.activeConfiguration.Platform;
+			this.recreate(parent);
 		});
 
 		Extension.registerCommand('vstools.cut', async () =>
@@ -536,18 +610,18 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 			const folder = await getFolder(item);
 			if (folder) {
 				const project = this.getProject(item);
-				const filters = project instanceof MsBuildProject ? await project.getFolders(true) : undefined;
+				const filters = project instanceof MsBuildProjectBase ? await project.getFolders('filter') : undefined;
 				for (let file of (await vscode.env.clipboard.readText()).split('\n')) {
 					const cut = file.startsWith('<cut:');
 					if (cut)
 						file = file.substring(file.indexOf('>') + 1);
 					const filepath = path.resolve(vscode.workspace.workspaceFolders?.[0].uri.fsPath ?? '', file);
-					const stat = await getStat(filepath);
+					const stat = await fs.getStat(filepath);
 					if (stat && stat.type !== vscode.FileType.Directory)
 						addFile(filepath, folder, filters);
 				}
 				this.recreate(item);
-				if (project instanceof MsBuildProject)
+				if (project instanceof VCProject)
 					project.dirtyFilters();
 			}
 		});
@@ -557,16 +631,27 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 				item = this.treeView.selection[0];
 
 			if (item instanceof TreeItem && item.parent) {
-				const folder = await getFolder(item.parent);
-				if (item instanceof FolderTreeItem)
-					folder?.remove_folder(item.folder);
-				else if (item instanceof FileEntryTreeItem)
-					folder?.remove(item.entry);
-				this.recreate(item.parent);
+				if (item instanceof ProjectTreeItem) {
+					const solution	= this.getSolution(item);
+					if (await yesno(`Are you sure you want to remove ${item.project.name} from ${solution.fullpath}?`)) {
+						solution.removeProject(item.project);
+						this.recreate(item.parent);
+					}
 
-				const project 	= this.getProject(item);
-				if (project instanceof MsBuildProject)
-					project.dirtyFilters();
+				} else {
+					const project 	= this.getProject(item);
+					const folder = await getFolder(item.parent);
+					if (item instanceof FolderTreeItem) {
+						if (project.removeFolder(item.folder))
+							folder?.removeFolder(item.folder);
+					} else if (item instanceof FileEntryTreeItem) {
+						if (project.removeEntry(item.entry))
+							folder?.remove(item.entry);
+					}
+	
+					this.recreate(item.parent);
+				}
+
 			}
 		});
 
@@ -580,21 +665,36 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 				});
 				if (newName) {
 					if (item instanceof FolderTreeItem) {
-						item.folder.name = newName;
-
 						const project 	= this.getProject(item);
-						if (project instanceof MsBuildProject)
-							project.dirtyFilters();
+						if (!project.renameFolder(item.folder, newName))
+							return;
 					}
 					item.label = newName;
 					this.refresh(item);
 				}
 			}
 		});
-		Extension.registerCommand('vstools.createFile', async (item?: TreeItem) => {
+		Extension.registerCommand('vstools.addFile', async (item?: TreeItem) => {
+			if (!item)
+				item = this.treeView.selection[0];
+			const options: vscode.OpenDialogOptions = {
+				filters: {
+					'All Files': ['*']
+				}
+			};
+			const file = (await vscode.window.showOpenDialog(options))?.[0].fsPath;
+			if (file) {
+				const project 	= this.getProject(item);
+				if (project.addFile(path.basename(file), file)) {
+					const folder = await getFolder(item);
+					if (folder)
+						addFile(file, folder);
+					this.recreate(item);
+				}
+			}
 		});
 
-		Extension.registerCommand('vstools.createFolder', async (item?: TreeItem) => {
+		Extension.registerCommand('vstools.newFolder', async (item?: TreeItem) => {
 			if (!item)
 				item = this.treeView.selection[0];
 			
@@ -605,63 +705,190 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 			});
 			if (newName) {
 				const folder = await getFolder(item);
-				folder?.add_folder(new Folder(newName));
+				folder?.addFolder(new Folder(newName));
 				this.recreate(item);
 
 				const project 	= this.getProject(item);
-				if (project instanceof MsBuildProject)
+				if (project instanceof VCProject)
 					project.dirtyFilters();
 			}
 		});
 
-		Extension.registerCommand('vstools.refresh', () => {
-			this.children = [];
-			this.refresh();
+		Extension.registerCommand('vstools.addProject', async (item?: SolutionTreeItem) => {
+			const solution = item ? item.solution : this.solutions[0];
+			const options: vscode.OpenDialogOptions = {
+				filters: {
+					'All Project Files':					['csproj', 'fsproj', 'vbproj', 'shproj', 'wapproj', 'vcxproj', 'vcproj', 'vcxitems', 'xproj', 'esproj', 'androidproj', 'msbuildproj'],
+					'C# Project Files': 					['csproj'],
+					'F# Project Files': 					['fsproj'],
+					'VB Project Files': 					['vbproj'],
+					'Shared Projects':  					['shproj'],
+					'WAPProj Project Files': 				['wapproj'],
+					'VC++ Project Files':   				['vcxproj', 'vcxitems'],
+					'.NET Core 2015 Project Files': 		['xproj'],
+					'Javascript Application Project Files':	['esproj'],
+					'Android Packaging Projects':  			['androidproj'],
+					'Common Project System Files':			['msbuildproj'],
+				}
+			};
+			const file = (await vscode.window.showOpenDialog(options))?.[0].fsPath;
+			if (file)
+				solution.addProjectFilename(file);
 		});
+
+		Extension.registerCommand('vstools.newFile', async (item: TreeItem) => {
+			const project			= this.getProject(item);
+			const all_templates 	= await templates.value;
+			const item_templates 	= [...all_templates.Item, ...all_templates.DotNetItem];
+			const menu	= menuTagGroupChildren('Pick an Item Template', item_templates, new Set<string>);
+
+			const x 	= await hierarchicalMenu<TemplateItem>(menu, 'Select an Item Type');
+			if (!x)
+				return;
+
+			const template	= x.template!;
+			const folder	= path.dirname(project.fullpath);
+			const name0 	= path.basename(await fs.createNewName(path.join(folder, template.defaultName)), path.extname(template.defaultName));
+			const name		= await vscode.window.showInputBox({value: name0, prompt: 'Enter the new Project name'});
+			if (!name)
+				return;
+
+			template.create(folder, name, {
+				addFile(filename: string) {
+					project.addFile(path.basename(filename), filename);
+				}
+			});
+		});
+
+		Extension.registerCommand('vstools.newProject', async (item?: SolutionTreeItem) => {
+			const solution		= item ? item.solution : this.solutions[0];
+			const all_templates = await templates.value;
+			const project_templates = [...all_templates.Project, ...all_templates.ProjectGroup, ...all_templates.DotNetProject];
+
+			const menu	= [
+				{label: "By Language", kind: vscode.QuickPickItemKind.Separator},
+				...Object.entries(utils.partition(project_templates, t => t.language)).map(([i, group]) => {
+					const title  = `Pick a ${i} Project Template`;
+					return {label: i, title, children: menuTagGroupChildren(title, group, new Set<string>)};
+				}),
+				...menuTagGroupChildren('Pick a Project Template', project_templates, new Set<string>)
+			];
+
+			const x 	= await hierarchicalMenu<TemplateItem>(menu, 'Select a Project Type');
+			if (!x)
+				return;
+
+			const folder	= await vscode.window.showOpenDialog({
+				defaultUri: 		vscode.workspace.workspaceFolders?.[0].uri,
+				canSelectFolders:	true,
+				openLabel: 			'Select Folder'
+			});
+			
+			if (folder && folder.length) {
+				const template	= x.template!;
+				const name0 	= path.basename(await fs.createNewName(path.join(folder[0].fsPath, template.defaultName)));
+				const name		= await vscode.window.showInputBox({value: name0, prompt: 'Enter the new Project name'});
+				if (!name)
+					return;
+
+				template.create(path.join(folder[0].fsPath, name), name, {
+					addFile(filename: string) {
+						solution.addProjectFilename(filename);
+					}
+				});
+			}
+		});
+
+		Extension.registerCommand('vstools.refresh', (item?: TreeItem) => this.recreate(item));
 
 		Extension.registerCommand('vstools.settings', (item: TreeItem) => this.updateSettings(item));
 
 		Extension.registerCommand('vstools.projectStartup', (item: ProjectTreeItem) => {
-			if (this.solution.startupProject !== item.project) {
-				this.solution.startupProject = item.project;
-				for (const i of item.parent?.children || []) {
-					if (i.highlight(i == item))
-						this.refresh(i);
+			const solution = this.getSolution(item);
+			solution.startup = item.project;
+		});
+
+		Extension.registerCommand('vstools.build', (item: TreeItem) => {
+			const project 	= this.getProject(item);
+			const solution	= this.getSolution(item);
+			const settings: Record<string, string> = {
+				...solution?.activeConfiguration,
+				VisualStudioVersion:	"17.0"
+			};
+
+			if (project) {
+				settings.file = solution.fullpath;
+				project.build(settings);
+			} else {
+				solution.build(settings);
+			}
+		});
+
+		Extension.registerCommand('vstools.projectViewByFilter',	item => this.setView(item, "filter"));
+		Extension.registerCommand('vstools.projectViewByFolder', 	item => this.setView(item, "folder"));
+		Extension.registerCommand('vstools.projectViewByItem', 		item => this.setView(item, "items"));
+
+		Extension.registerCommand('vstools.addPackage', 			async (item: ProjectTreeItem) => {
+			const project = item.project as MsBuildProjectBase;
+
+			const feeds = await project.nugetFeeds();
+			let feed = feeds[0];
+			if (feeds.length > 1) {
+				const x = await vscode.window.showQuickPick((await project.nugetFeeds()).map(f => ({label: f.name, feed: f})), {placeHolder: 'Select a feed'});
+				if (!x)
+					return;
+				feed = x.feed;
+			}
+
+			const search = await searchOption('Title', 'Search a package', '', async search => (await nuget.searchPackage(feed, search)).map(p => ({label: p.id, package: p})));
+			if (!search)
+				return;
+
+			const version = await vscode.window.showQuickPick(search.package.versions.map(v => ({label: v.version, version: v})), {placeHolder: 'Select a version'});
+			if (!version)
+				return;
+
+			project.msbuild.items.PackageReference.includePlain(search.package.id, version.version);
+			
+		});
+
+		Extension.registerCommand("vstools.findInSolution",		async (uri: Uri) => {
+			const project = await Promise.any(
+				this.solutions.map(async solution => await Promise.any(Object.values(solution.projects)
+					.map(project => project.getFolders('filter').then(tree => tree.findFile(uri.fsPath) ? project : Promise.reject()))
+				))).catch(() => null);
+
+			for (const i of await this.getChildren((await this.getChildren())[0])) {
+				if (i instanceof ProjectTreeItem && i.project === project) {
+					const found = await this.findCreate(i, uri);
+					if (found) {
+						this.treeView.reveal(found);
+					}
+					break;
 				}
 			}
 		});
 
-		Extension.registerCommand('vstools.projectBuild', (item: ProjectTreeItem) => {
-			const configuration = this.solution?.activeConfiguration;
-			const settings = {
-				VisualStudioVersion:	"17.0",
-				Configuration: 			configuration?.Configuration,
-				Platform: 				configuration?.Platform,
-				file:					this.solution?.fullpath
-			};
-
-			item.project.build(settings);
-		});
-
-		Extension.registerCommand('vstools.projectViewByFilter',	item => {item.view_by = "filter"; this.collapse(item); });
-		Extension.registerCommand('vstools.projectViewByFolder', 	item => {item.view_by = "folder"; this.collapse(item); });
-		Extension.registerCommand('vstools.projectViewByItem', 		item => {item.view_by = "items"; this.collapse(item); });
-
 	}
 
 	public updateSettings(item: TreeItem) {
+		const solution = this.getSolution(item);
 		if (item.contextValue == 'solution') {
-			SettingsView.Set("Solution Settings", this.solution.activeConfiguration, this.solution);
+			SettingsView.Set("Solution Settings", solution.activeConfiguration, solution);
 			return;
 		}
 		const project 	= this.getProject(item);
-		if (project instanceof MsBuildProject) {
+		if (project instanceof MsBuildProjectBase) {
 			project.ready.then(async () => {
-				const config = project.configuration[this.solution.activeConfiguration?.fullName][0];
+				const c = project.configuration[solution.active.join('|')];
+				const config = {
+					Configuration:	c?.Configuration ?? solution.active[0],
+					Platform: 		c?.Platform ?? solution.active[1],
+				};
 
 				switch (item.contextValue) {
 					case "project": {
-						SettingsView.Set(`${item.label as string} Project Settings`, config, project);
+						SettingsView.Set(`${project.name} Project Settings`, config, project);
 						break;
 					}
 					//case "items": {
@@ -694,8 +921,8 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 			treeDataTransfer.set('text/uri-list', new vscode.DataTransferItem(files.map(i => i.resourceUri?.toString()).join(';')));
 	}
 
-    public async handleDrop(target: TreeItem | undefined, sources: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-        if (target && !token.isCancellationRequested) {
+	public async handleDrop(target: TreeItem | undefined, sources: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+		if (target && !token.isCancellationRequested) {
 			if (target.contextValue == 'file' && target.parent)
 				target = target.parent;
 			
@@ -708,13 +935,13 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 				if (transfer) {
 					//dropping from this tree
 
-					const files 	= transfer.value.filter((i : TreeItem) => i instanceof FileEntryTreeItem) as FileEntryTreeItem[];
-					const folders 	= transfer.value.filter((i : TreeItem) => i instanceof FolderTreeItem) as FolderTreeItem[];
+					const files 	= transfer.value.filter((i: TreeItem) => i instanceof FileEntryTreeItem) as FileEntryTreeItem[];
+					const folders 	= transfer.value.filter((i: TreeItem) => i instanceof FolderTreeItem) as FolderTreeItem[];
 
 					for (const i of folders) {
-						folder.add_folder(i.folder);
+						folder.addFolder(i.folder);
 						if (i.parent && this.getRootByClass(i, ProjectTreeItem) === project) {
-							await getFolder(i.parent).then(f => f?.remove_folder(i.folder));
+							await getFolder(i.parent).then(f => f?.removeFolder(i.folder));
 							dirty.add(i.parent);
 						}
 					}
@@ -730,17 +957,17 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 				} else if ((transfer = sources.get(URI_LIST_MIME_TYPE))) {
 					//dropping from another tree
 
-					const filters	= project && (project instanceof ProjectTreeItem) && project.project instanceof MsBuildProject
-									? await project.project.getFolders(true) : undefined;
-					transfer.value.split(';').forEach((i : string) => addFile(Uri.parse(i).fsPath, folder, filters));
+					const filters	= project && (project instanceof ProjectTreeItem) && project.project instanceof MsBuildProjectBase
+									? await project.project.getFolders('filter') : undefined;
+					transfer.value.split(';').forEach((i: string) => addFile(vscode.Uri.parse(i).fsPath, folder, filters));
 				}
 
 				dirty.forEach(i => this.recreate(i));
-				((project as ProjectTreeItem).project as MsBuildProject).dirtyFilters();
+				((project as ProjectTreeItem).project as VCProject).dirtyFilters();
 
 			}
-        }
-    }
+		}
+	}
 
 	//provideFileDecoration(uri: Uri, token: vscode.CancellationToken): vscode.ProviderResult<vscode.FileDecoration> {
 	//	if (uri.fsPath === this.solution.startupProject?.fullpath) {
@@ -752,6 +979,6 @@ export class SolutionExplorerProvider /*extends vscode.Disposable*/ implements v
 	//		};
 	//	}
 	//	return null;  // to get rid of the custom fileDecoration
-    //}
+	//}
 }
 

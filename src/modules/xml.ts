@@ -42,11 +42,9 @@ export class Element {
 	public get elements() {
 		if (!this._elements) {
 			this._elements = {};
-			for (const i of this.children) {
-				if (isElement(i)) {
-					i.next = this.elements[i.name];
-					this._elements[i.name] = i;
-				}
+			for (const i of this.allElements().reverse()) {
+				i.next = this.elements[i.name];
+				this._elements[i.name] = i;
 			}
 		}
 		return this._elements;
@@ -119,7 +117,7 @@ export class EntityCreator {
 	reverse:	Record<string, string>;
 	re:			RegExp;
 
-	constructor(entities: Entities) {
+	constructor(entities: Entities = {...criticalEntities, quot:'"'}) {
 		this.reverse	= Object.entries(entities).reduce((a, [k, v]) => (a[v] = k, a), {} as Record<string, string>);
 		this.re			= new RegExp(`([${Object.values(entities).join('')}])|([\u0000-\u0008\u000b-\u001f\ud800-\udfff\ufffe-\uffff])`, 'g');
 	}
