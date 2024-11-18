@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from "path";
 import * as crypto from 'crypto';
-import * as binary from "./modules/binary";
-import * as fs from './modules/fs';
-import * as utils from './modules/utils';
+import * as binary from "./shared/binary";
+import * as fs from './vscode-utils/fs';
+import * as utils from './shared/utils';
 import {createTask} from './extension';
 import {Project, SolutionFolder, WebProject, WebDeploymentProject} from "./Project";
-import * as CompDoc from "./modules/CompoundDocument";
+import * as CompDoc from "./shared/CompoundDocument";
 import {MsBuildProject, ManagedProjectMaker, CPSProjectMaker, ESProject, AndroidProject} from "./MsBuildProject";
 import {VCProject} from "./vcxproj";
 

@@ -1,5 +1,5 @@
 
-import * as utils from '../modules/utils';
+import * as utils from '../shared/utils';
 
 export class Version {
 	constructor(public major = 0, public minor = 0, public patch = 0) {}

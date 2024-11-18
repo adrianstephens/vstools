@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
-import * as xml from "./modules/xml";
-import * as utils from "./modules/utils";
+import * as xml from "./xml/xml";
+import * as utils from "./shared/utils";
 import * as MsBuild from "./MsBuild";
-import * as insensitive from './modules/CaseInsensitive';
+import * as insensitive from './shared/CaseInsensitive';
 import {XMLCache, Extension} from "./extension";
 import {Solution} from "./Solution";
 import {Properties} from "./Project";
 import {MsBuildProjectBase} from "./MsBuildProject";
-import {jsx, fragment, codicons, Label, ClickableIcon} from "./modules/jsx";
+import {jsx, fragment, codicons, Label, ClickableIcon} from "./shared/jsx";
 
 const Uri = vscode.Uri;
 let the_panel: 					vscode.WebviewPanel | undefined;

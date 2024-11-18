@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from "path";
 import {Uri} from 'vscode';
-import * as utils from './utils';
+import * as utils from '../shared/utils';
 
 export class Glob {
 	private readonly regexp: RegExp;

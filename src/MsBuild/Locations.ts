@@ -1,11 +1,11 @@
 import * as path from "path";
-import * as insensitive from '../modules/CaseInsensitive';
-import * as fs from '../modules/fs';
-import * as utils from '../modules/utils';
+import * as insensitive from '../shared/CaseInsensitive';
+import * as fs from '../vscode-utils/fs';
+import * as utils from '../shared/utils';
 import {Version, version_compare, sortByVersion} from './Version';
 import { XMLCache } from "../extension";
-import * as xml from "../modules/xml";
-import * as registry from '../modules/registry';
+import * as xml from "../xml/xml";
+import * as registry from '../registry/registry';
 import {exec, execFile} from 'child_process';
 
 interface KeyVersion {

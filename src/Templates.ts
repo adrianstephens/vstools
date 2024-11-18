@@ -1,14 +1,14 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as xml from './modules/xml';
-import * as fs from './modules/fs';
-import * as utils from './modules/utils';
-import { CLR } from './modules/clr';
-import { PE } from './modules/pe';
+import * as xml from './xml/xml';
+import * as fs from './vscode-utils/fs';
+import * as utils from './shared/utils';
+import { CLR } from './shared/clr';
+import { PE } from './shared/pe';
 import { XMLCache, vsdir } from './extension';
 import {Locations} from './MsBuild';
 import {execFile} from 'child_process';
-import * as insensitive from './modules/CaseInsensitive';
+import * as insensitive from './shared/CaseInsensitive';
 
 function replace(s: string, substitutions: Record<string, string>) {
 	return utils.replace(s, /\$(\w+)\$/g, m=> substitutions[m[1]] ?? process.env[m[1]] ?? m[0]);
@@ -68,9 +68,10 @@ const virtual_registry = new utils.Lazy(() => {
 
 class Resources {
 	static async load(dll: string) {
-		const p = await PE.load(dll);
-		if (p) {
-			const native	= p.GetResources();
+		const p = new PE(await fs.loadFile(dll));
+		if (p && p.opt) {
+			//const res_dir	= p.opt.DataDirectory.RESOURCE;
+			const native	= p.ReadDirectory('RESOURCE');
 			const clr_dir	= p.opt.DataDirectory.CLR_DESCRIPTOR;
 			const managed	= clr_dir.Size && new CLR(p, p.GetDataDir(clr_dir)!).allResources();
 			return new Resources(native, managed);

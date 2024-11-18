@@ -1,10 +1,10 @@
 
 import * as vscode from "vscode";
-import * as fs from '../modules/fs';
+import * as fs from '../vscode-utils/fs';
 import * as path from "path";
-import * as registry from '../modules/registry';
-import * as insensitive from '../modules/CaseInsensitive';
-import * as utils from '../modules/utils';
+import * as registry from '../registry/registry';
+import * as insensitive from '../shared/CaseInsensitive';
+import * as utils from '../shared/utils';
 import {Version, version_compare, extendVersion} from './Version';
 import * as Locations from './Locations';
 import {vsdir} from '../extension';

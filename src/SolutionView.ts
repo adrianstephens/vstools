@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import * as fs from "./modules/fs";
+import * as fs from "./vscode-utils/fs";
 import * as nuget from './nuget';
-import * as utils from "./modules/utils";
+import * as utils from "./shared/utils";
 
 import * as MsBuild from "./MsBuild";
 import * as SettingsView from "./SettingsView";

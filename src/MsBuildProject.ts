@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from "path";
-import * as fs from "./modules/fs";
-import * as xml from "./modules/xml";
+import * as fs from "./vscode-utils/fs";
+import * as xml from "./xml/xml";
 import * as MsBuild from './MsBuild';
 import * as nuget from './nuget';
 
