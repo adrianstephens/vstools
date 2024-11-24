@@ -4,11 +4,11 @@
 	"description": "Support for Visual Studio projects inside Code",
 	"icon": "assets/icon.png",
 	"version": "0.0.1",
-	"publisher": "adrianstephens",
+	"publisher": "isopodlabs",
 	"repository": "https://github.com/adrianstephens/vstools",
 	"files": [
-		"out/*",
-		"assets/*",
+		"out",
+		"assets",
 		"LICENSE.txt"
 	],
 	"engines": {
@@ -47,14 +47,6 @@
 				{
 					"id": "vstools-view",
 					"name": "Solution",
-					"when": "vstools.loaded"
-				}
-			],
-			"debug": [
-				{
-					"id": "vstools-modules",
-					"name": "Modules",
-					"type": "webview",
 					"when": "vstools.loaded"
 				}
 			]
@@ -515,8 +507,5 @@
 		"@vscode/codicons": "^0.0.20",
 		"eslint": "^8.26.0",
 		"vscode-debugprotocol": "^1.51.0"
-	},
-	"dependencies": {
-		"source-map-support": "^0.5.21"
 	}
 }

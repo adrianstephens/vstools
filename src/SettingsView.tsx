@@ -3,11 +3,11 @@ import * as xml from "./xml/xml";
 import * as utils from "./shared/utils";
 import * as MsBuild from "./MsBuild";
 import * as insensitive from './shared/CaseInsensitive';
-import {XMLCache, Extension} from "./extension";
+import {XMLCache, Extension, log} from "./extension";
 import {Solution} from "./Solution";
 import {Properties} from "./Project";
 import {MsBuildProjectBase} from "./MsBuildProject";
-import {jsx, fragment, codicons, Label, ClickableIcon} from "./shared/jsx";
+import {jsx, fragment, render, codicons, Label, ClickableIcon} from "./shared/jsx";
 
 const Uri = vscode.Uri;
 let the_panel: 					vscode.WebviewPanel | undefined;
@@ -253,9 +253,9 @@ class Schema {
 						<Label id={id} display={(attributes.DisplayName ?? attributes.Name) + ':'}/>
 						<InputItem id={id} item={item.raw}/>
 					</div>;
-				}).join("\n")}
+				})}
 			</div>
-			).join("\n")}
+			)}
 		</>;
 	}
 }
@@ -518,7 +518,7 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 				break;
 
 			case 'change': {
-				console.log(`change: id=${message.id} value=${message.value}`);
+				log(`change: id=${message.id} value=${message.value}`);
 				if (!modifications[message.id]) {
 					addClass(panel, by_id(message.id), 'modified', true, 1);
 					modifications[message.id] = isLocal(project, settings[message.id]) ? settings[message.id]?.source() ?? '' : '<inherit>';	// save original value
@@ -552,48 +552,51 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 
 	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
 	panel.webview.html = '';
-	panel.webview.html = `<!DOCTYPE html>` + 
-<html lang="en">
-<head>
-	<meta charset="UTF-8"/>
-	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-	<link rel="stylesheet" href={getUri("settings.css")}/>
-</head><body>
+	panel.webview.html = `<!DOCTYPE html>` + render(<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<link rel="stylesheet" href={getUri("settings.css")}/>
+		</head>
+		
+		<body>
+			<div style="display:flex">
 
-<div style="display:flex">
+				{/*SIDEBAR*/}
+				<div class="settings-sidebar">
+					<div style="display:flex">
+						<div id="configuration" style="flex:1"><Label id="Configuration" display="Configuration"/>
+							<div hidden id="configuration.$(id)">
+								<div><input type="checkbox" id="configuration.$(id).check" name="$(id)"><span contenteditable name="configuration.$(id)">$(name)</span></input></div>
+							</div>
+							{/*<CheckList values={project.configurationList()} value = {config.Configuration}/>*/}
+						</div>
+						<div id="platform" style="flex:1"><Label id="Platform" display="Platform"/>
+							<div hidden id="platform.$(id)">
+								<div><input type="checkbox" id="platform.$(id).check" name="$(id)"><span contenteditable name="platform.$(id)">$(name)</span></input></div>
+							</div>
+							{/*<CheckList values={project.platformList()} value={config.Platform}/>*/}
+						</div>
+					</div>
 
-	<div class="settings-sidebar">
-	<div style="display:flex">
-		<div id="configuration" style="flex:1"><Label id="Configuration" display="Configuration"/>
-			<div hidden id="configuration.$(id)">
-				<div><input type="checkbox" id="configuration.$(id).check" name="$(id)"><span contenteditable name="configuration.$(id)">$(name)</span></input></div>
+					<ul id = "sidebar">
+						{schemas.map(schema => <li>
+							<span class="caret">{schema.display}
+							<ul>{schema.categories.map(cat => <li data-target={schema.name+'-'+cat.name}>{cat.display}</li>)}</ul>
+							</span>
+						</li>)}
+					</ul>
+				</div>
+
+				{/*CONTENTS*/}
+				<div class="settings-content">{schemas.map((schema, i) => schema.toHTML())}</div>
+
 			</div>
-			{/*<CheckList values={project.configurationList()} value = {config.Configuration}/>*/}
-		</div>
-		<div id="platform" style="flex:1"><Label id="Platform" display="Platform"/>
-			<div hidden id="platform.$(id)">
-				<div><input type="checkbox" id="platform.$(id).check" name="$(id)"><span contenteditable name="platform.$(id)">$(name)</span></input></div>
-			</div>
-			{/*<CheckList values={project.platformList()} value={config.Platform}/>*/}
-		</div>
-	</div>
 
-	<ul id = "sidebar">
-		{schemas.map(schema => <li>
-			<span class="caret">{schema.display}
-			<ul>{schema.categories.map(cat => <li data-target={schema.name+'-'+cat.name}>{cat.display}</li>).join("\n")}</ul>
-			</span>
-		</li>)}
-	</ul>
-	</div>
+			<script src={getUri("settings.js")}></script>
 
-	<div class="settings-content">{schemas.map((schema, i) => schema.toHTML())}</div>
-
-</div>
-
-<script src={getUri("settings.js")}></script>
-
-</body></html>;
+		</body>
+	</html>);
 
 	init();
 	update();
@@ -619,6 +622,7 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 		configuration:	solution.configurationList(),
 		platform:		solution.platformList(),
 	};
+	let change: vscode.Disposable;
 
 	//currently checked
 	let configurations 	= [lists.configuration.indexOf(config.Configuration)];
@@ -642,6 +646,10 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 		setItems(panel, {
 			[`configuration.${lists.configuration.indexOf(config.Configuration)}.check`]: true,
 			[`platform.${lists.platform.indexOf(config.Platform)}.check`]: true
+		});
+
+		return solution.onDidChange(what => {
+			update();
 		});
 	}
 	function update() {
@@ -672,8 +680,10 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 	disposeDidChangeViewState = panel.onDidChangeViewState(e => {
 		const panel = e.webviewPanel;
 		if (panel.visible) {
-			init();
+			change = init();
 			update();
+		} else {
+			change.dispose();
 		}
 	}, null, Extension.context.subscriptions);
 
@@ -722,7 +732,7 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 				break;
 			}
 			case 'change': {
-				console.log(`change: item=${message.id} value=${message.value}`);
+				log(`change: item=${message.id} value=${message.value}`);
 				const [proj, action] = message.id.split('.');
 
 				if (proj === 'solution') {
@@ -754,7 +764,7 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 						if (valid)
 							solution.dirty();
 					} else {
-						console.log("something went wrong");
+						log("something went wrong");
 					}
 				}
 				break;
@@ -763,79 +773,80 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 	}, null, Extension.context.subscriptions);
 
 	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+
 	panel.webview.html = '';
-	panel.webview.html = `<!DOCTYPE html>`+
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<link rel="stylesheet" href={getUri("settings.css")}/>
-</head>
-<body>
+	panel.webview.html = `<!DOCTYPE html>`+ render(<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<link rel="stylesheet" href={getUri("settings.css")}/>
+		</head>
 
-<div style="display:flex">
+		<body>
+			<div style="display:flex">
 
-<div class="settings-sidebar">
+				{/*SIDEBAR*/}
+				<div class="settings-sidebar">
+					<div style="display:flex">
+						<div id="configuration" style="flex:1">
+							<Label id="Configuration" display="Configuration"/>
+							<div hidden id="configuration.$(id)">
+								<ClickableIcon code={codicons.trash} id="configuration.$(id).delete"/>
+								<ClickableIcon code={codicons.add} id="configuration.$(id).duplicate"/>
+								<input type="checkbox" name="$(id)" id="configuration.$(id).check"><span contenteditable name="configuration.$(id)">$(name)</span></input>
+							</div>
+						</div>
+						<div id="platform" style="flex:1">
+							<Label id="Platform" display="Platform"/>
+							<div hidden id="platform.$(id)">
+								<ClickableIcon code={codicons.trash} id="platform.$(id).delete"/>
+								<ClickableIcon code={codicons.add} id="platform.$(id).duplicate"/>
+								<input type="checkbox" name="$(id)" id="platform.$(id).check"><span contenteditable name="platform.$(id)">$(name)</span></input>
+							</div>
+						</div>
+					</div>
+					<ul id = "sidebar">
+					</ul>
+				</div>
 
-<div style="display:flex">
-	<div id="configuration" style="flex:1">
-		<Label id="Configuration" display="Configuration"/>
-		<div hidden id="configuration.$(id)">
-			<ClickableIcon code={codicons.trash} id="configuration.$(id).delete"/>
-			<ClickableIcon code={codicons.add} id="configuration.$(id).duplicate"/>
-			<input type="checkbox" name="$(id)" id="configuration.$(id).check"><span contenteditable name="configuration.$(id)">$(name)</span></input>
-		</div>
-	</div>
-	<div id="platform" style="flex:1">
-		<Label id="Platform" display="Platform"/>
-		<div hidden id="platform.$(id)">
-			<ClickableIcon code={codicons.trash} id="platform.$(id).delete"/>
-			<ClickableIcon code={codicons.add} id="platform.$(id).duplicate"/>
-			<input type="checkbox" name="$(id)" id="platform.$(id).check"><span contenteditable name="platform.$(id)">$(name)</span></input>
-		</div>
-	</div>
-</div>
-<ul id = "sidebar">
-</ul>
-</div>
+				{/*CONTENTS*/}
+				<div class="settings-content">
+					<h1>Startup Project</h1>
+					<div class="setting-item">
+						<DropDownList id= "solution.startup" values={projects.map(p => ({value: p.guid, display: p.name}))}/>
+					</div>
 
-<div class="settings-content">
+					<h1>Debug Source Files</h1>
+					<h2>Include Directories</h2>
+					<div class="setting-item">
+						<textarea id='debug_include' rows="1" style="flex:3"></textarea>
+					</div>
+					<h2>Exclude Files</h2>
+					<div class="setting-item">
+						<textarea id='debug_exclude' rows="1" style="flex:3"></textarea>
+					</div>
 
-<h1>Startup Project</h1>
-<div class="setting-item">
-	<DropDownList id= "solution.startup" values={projects.map(p => ({value: p.guid, display: p.name}))}/>
-</div>
+					<h1>Configurations</h1>
 
-<h1>Debug Source Files</h1>
-<h2>Include Directories</h2>
-<div class="setting-item">
-	<textarea id='debug_include' rows="1" style="flex:3"></textarea>
-</div>
-<h2>Exclude Files</h2>
-<div class="setting-item">
-	<textarea id='debug_exclude' rows="1" style="flex:3"></textarea>
-</div>
+					<h2><div class="setting-item">
+						<span>Project</span><span>Configuration</span><span>Platform</span><span style='text-align: center'>Build</span><span style='text-align: center'>Deploy</span>
+					</div></h2>
 
-<h1>Configurations</h1>
+					{projects.map(p => <div class="setting-item">
+						<span>{p.name}</span>
+						<DropDownList id = {p.name+'.config'}	values = {p.configurationList().map(e => ({value: e, display: e}))}/>
+						<DropDownList id = {p.name+'.plat'}	values = {p.platformList().map(e => ({value: e, display: e}))}/>
+						<input type="checkbox" id={p.name+'.build'}></input>
+						<input type="checkbox" id={p.name+'.deploy'}></input>
+					</div>)}
+				</div>
 
-<h2><div class="setting-item">
-	<span>Project</span><span>Configuration</span><span>Platform</span><span style='text-align: center'>Build</span><span style='text-align: center'>Deploy</span>
-</div></h2>
+			</div>
 
-{projects.map(p => <div class="setting-item">
-	<span>{p.name}</span>
-	<DropDownList id = {p.name+'.config'}	values = {p.configurationList().map(e => ({value: e, display: e}))}/>
-	<DropDownList id = {p.name+'.plat'}	values = {p.platformList().map(e => ({value: e, display: e}))}/>
-	<input type="checkbox" id={p.name+'.build'}></input>
-	<input type="checkbox" id={p.name+'.deploy'}></input>
-</div>)}
+			<script src={getUri("settings.js")}></script>
 
-</div>
-</div>
-
-<script src={getUri("settings.js")}></script>
-
-</body></html>;
+		</body>
+	</html>);
 
 	init();
 	update();

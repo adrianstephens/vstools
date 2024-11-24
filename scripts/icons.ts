@@ -131,12 +131,12 @@ async function readDirectory(dir: string) : Promise<string[]> {
 }
 
 export async function xml_load(file : string) : Promise<xml.Element | void> {
-	console.log(`Loading ${file}`);
+	log(`Loading ${file}`);
 	return readFile(file)
 		.then(bytes => new TextDecoder().decode(bytes))
 		.then(
 			content	=> xml.parse(content),
-			error	=> console.log(`Failed to load ${file} : ${error}`)
+			error	=> log(`Failed to load ${file} : ${error}`)
 		);
 }
 
@@ -144,12 +144,12 @@ export async function xml_save(file: string, element: xml.Element) : Promise<voi
 	writeFile(file, Buffer.from(element.toString(), "utf-8"))
 		.then(
 			()		=> {},
-			error	=> console.log(`Failed to save ${file} : ${error}`)
+			error	=> log(`Failed to save ${file} : ${error}`)
 		);
 }
 
 async function makeDarkIcons(from:string, to:string) {
-	console.log(`Processing ${from} to ${to}`);
+	log(`Processing ${from} to ${to}`);
 
 	function process_colour(colour: string) : string {
 		if (colour.startsWith("#")) {
@@ -188,7 +188,7 @@ async function makeDarkIcons(from:string, to:string) {
 			if (path.extname(file) == '.svg') {
 				await xml_load(path.join(from, file)).then(doc => {
 					if (doc?.firstElement()?.name === "svg") {
-						console.log(`Processing ${file}`);
+						log(`Processing ${file}`);
 						process(doc);
 						xml_save(path.join(to, file), doc);
 					}
@@ -197,7 +197,7 @@ async function makeDarkIcons(from:string, to:string) {
 		}
 	});
 }
-console.log(`hello`);
+log(`hello`);
 
 const dark_dir = 'assets/dark';
 makeDarkIcons('assets', dark_dir);

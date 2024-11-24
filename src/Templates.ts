@@ -5,7 +5,7 @@ import * as fs from './vscode-utils/fs';
 import * as utils from './shared/utils';
 import { CLR } from './shared/clr';
 import { PE } from './shared/pe';
-import { XMLCache, vsdir } from './extension';
+import { XMLCache, vsdir, log } from './extension';
 import {Locations} from './MsBuild';
 import {execFile} from 'child_process';
 import * as insensitive from './shared/CaseInsensitive';
@@ -73,7 +73,7 @@ class Resources {
 			//const res_dir	= p.opt.DataDirectory.RESOURCE;
 			const native	= p.ReadDirectory('RESOURCE');
 			const clr_dir	= p.opt.DataDirectory.CLR_DESCRIPTOR;
-			const managed	= clr_dir.Size && new CLR(p, p.GetDataDir(clr_dir)!).allResources();
+			const managed	= clr_dir.Size && new CLR(p, p.GetDataDir(clr_dir)!.data).allResources();
 			return new Resources(native, managed);
 		}
 	}
@@ -116,7 +116,7 @@ async function findAssembly(assembly?: string) {
 			if (i.name && parts[0].compare(i.name) === 0)
 				return i.codeBase;
 		}
-		console.log('no assembly', assembly);
+		log('no assembly' + assembly);
 		return path.join(vsdir, 'Common7', 'IDE', 'PublicAssemblies', assembly + '.dll');
 	}
 }
@@ -149,12 +149,12 @@ async function getStringResource(x: xml.Element) {
 				if ((result = (await ResCache.get(codebase2))?.getString(id)))
 					return result;
 
-				console.log('no res', codebase, packge, id);
+				log('no res' + codebase + packge + id);
 			} else {
-				console.log('no code', packge, id);
+				log('no code' + packge + id);
 			}
 		} else {
-			console.log('no entry', packge, id);
+			log('no entry' + packge + id);
 		}
 		return `${packge}.${id}`;
 	}
@@ -360,8 +360,8 @@ export class VSTemplate implements Template {
 			} else {
 				try {
 					await fs.copyFile(path.join(source_dir, source), target_filename);
-				} catch (error) {
-					console.log(error);
+				} catch (error: any) {
+					log(error.toString());
 				}
 			}
 

@@ -6,7 +6,7 @@ import * as MsBuild from './MsBuild';
 import * as nuget from './nuget';
 
 import {Project, ProjectConfiguration, Folder, FolderTree, Properties, ProjectItemEntry, makeFileEntry} from "./Project";
-import {xml_load, xml_save, vsdir} from './extension';
+import {xml_load, xml_save, vsdir, log} from './extension';
 
 //-----------------------------------------------------------------------------
 //	Project
@@ -27,11 +27,11 @@ export class MsBuildProjectBase extends Project {
 		fs.onChange(fullpath, (path: string) => fs.stat_reject(path).then(
 			stat => {
 				if (new Date().getTime() - stat.mtime < 10 * 1000) {
-					console.log("I've (really?) changed");
+					log("I've (really?) changed");
 					this.ready		= this.load();
 				}
 			},
-			error => console.log(error)
+			error => log(error)
 		));
 
 		xml_load(this.fullpath + ".user").then(doc => this.user_xml = doc);
@@ -75,7 +75,7 @@ export class MsBuildProjectBase extends Project {
 			const props = await this.preload(root);
 			await this.msbuild.evaluatePropsAndImports(props);
 			await this.postload(props);
-			console.log(`loaded ${this.fullpath}`);
+			log(`loaded ${this.fullpath}`);
 		}
 	}
 
@@ -106,7 +106,7 @@ export class MsBuildProjectBase extends Project {
 					if (entry.data.relativePath) {
 						let p = entry.data.source;
 						if (!p) {
-							console.log("nope");
+							log("nope");
 						} else {
 							while (p.parent)
 								p = p.parent;
@@ -305,7 +305,7 @@ export function CPSProjectMaker(language: string, ext: string) {
 			super(type, name, fullpath, guid, solution_dir);
 
 			fs.onChange(path.join(path.dirname(this.fullpath), '**\\*'), (filepath: string, mode: number) => {
-				console.log("something's changed");
+				log("something's changed");
 				if (mode === 1) {
 					if (filepath.endsWith(ext)) {
 						this.msbuild.addItem('Compile').includeFile(path.dirname(this.fullpath), filepath, this.msbuild.root!);

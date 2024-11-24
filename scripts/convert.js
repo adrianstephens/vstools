@@ -20,9 +20,9 @@ const convertToTypeScriptSignature = (csharpSignature) => {
   return tsSignature;
 };
 
-console.log('hello'); // Output: Add(x:int, y:double, values:string[]):int;
+log('hello'); // Output: Add(x:int, y:double, values:string[]):int;
 
 // Example usage
 const csharpSignature = 'public static int Add(int x, ref double y, params string[] values)';
 const tsSignature = convertToTypeScriptSignature(csharpSignature);
-console.log('it is:'+tsSignature); // Output: Add(x:int, y:double, values:string[]):int;
+log('it is:'+tsSignature); // Output: Add(x:int, y:double, values:string[]):int;

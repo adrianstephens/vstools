@@ -27,4 +27,4 @@ const convertToTypeScriptSignature = (csharpSignature) => {
 // Example usage
 const csharpSignature = 'public static int Add(int x, int y)';
 const tsSignature = convertToTypeScriptSignature(csharpSignature);
-console.log(tsSignature); // Output: Add(x:int, y:int):int;
+log(tsSignature); // Output: Add(x:int, y:int):int;

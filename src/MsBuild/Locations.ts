@@ -123,13 +123,13 @@ export async function FindAssemblyEx(
 	
 		const versionStrings: KeyVersion[] = [];
 		for (const [version, frameworkList] of sortByVersion(map))
-			utils.array_add(versionStrings, frameworkList.sort(utils.reverse_compare).map(s => ({key: s, version})));
-		utils.array_add(versionStrings, additionalToleratedKeys.map(k => ({key:k, version:targetVersion ?? new Version(0, 0)})));
+			utils.arrayAppend(versionStrings, frameworkList.sort(utils.reverse_compare).map(s => ({key: s, version})));
+		utils.arrayAppend(versionStrings, additionalToleratedKeys.map(k => ({key:k, version:targetVersion ?? new Version(0, 0)})));
 	
 		const componentKeys: RegKeyVersion[] = [];
 		for (const versionString of versionStrings) {
 			const fullVersionKey	= await baseKey[versionString.key][registryKeySuffix];
-			utils.array_add(componentKeys, Object.keys(fullVersionKey)
+			utils.arrayAppend(componentKeys, Object.keys(fullVersionKey)
 				.sort(utils.reverse_compare)
 				.map(i => ({key: fullVersionKey[i], version: versionString.version}))
 			);
@@ -137,7 +137,7 @@ export async function FindAssemblyEx(
 	
 		const directoryKeys: RegKeyVersion[] = [];
 		for (const componentKey of componentKeys) {
-			utils.array_add(directoryKeys, Object.keys(componentKey.key)
+			utils.arrayAppend(directoryKeys, Object.keys(componentKey.key)
 				.map(i => componentKey.key[i])
 				.sort(utils.reverse_compare)
 				.map(i => ({key: i, version: componentKey.version}))

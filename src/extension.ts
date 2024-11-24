@@ -1,4 +1,3 @@
-import 'source-map-support/register';
 import * as vscode from 'vscode';
 import * as path from "path";
 import * as nodefs from 'fs';
@@ -9,9 +8,16 @@ import * as MsBuild from './MsBuild';
 import {Solution} from "./Solution";
 import {Project, SolutionFolder} from "./Project";
 import {SolutionExplorerProvider} from "./SolutionView";
+import { MsBuildProject } from './MsBuildProject';
 
 const Uri	= vscode.Uri;
 export let vsdir = process.env.vsdir ?? '';
+
+let outputChannel: vscode.OutputChannel;
+export const log = (message: string) => {
+	outputChannel.appendLine(`${new Date().toISOString()} ${message}`);
+	console.log(message); // This will still show in debugger
+};
 
 //-----------------------------------------------------------------------------
 //	xml helpers
@@ -26,12 +32,12 @@ export async function xml_save(filename : string, element: xml.Element) : Promis
 	vscode.workspace.fs.writeFile(uri, Buffer.from(xml.js2xml(element), "utf-8"))
 		.then(
 			()		=> {},
-			error	=> console.log(`Failed to save ${uri.fsPath} : ${error}`)
+			error	=> log(`Failed to save ${uri.fsPath} : ${error}`)
 		);
 */
 	nodefs.writeFile(filename, Buffer.from(element.toString(), "utf-8"), error => {
 		if (error)
-			console.log(`Failed to save ${filename} : ${error}`);
+			log(`Failed to save ${filename} : ${error}`);
 	});
 }
 
@@ -175,6 +181,23 @@ async function substitutions(value: string): Promise<string> {
 	});
 }
 
+async function SetCPPConfiguration(name: string, dirs: string[]) {
+    const workspaceFolder =  vscode.workspace.workspaceFolders?.[0];
+	if (workspaceFolder) {
+		const file 	= path.join(workspaceFolder.uri.fsPath, '.vscode', 'c_cpp_properties.json');
+		const props	= JSON.parse(await fs.loadTextFile(file)) ?? { configurations: [] };
+
+		let config = props.configurations.find((i: any) => i.name === name);
+		if (!config)
+			props.configurations.push(config = { name });
+		
+		if (!utils.arrayEqual(config.includePath, dirs)) {
+			config.includePath = dirs;
+			fs.writeTextFile(file, JSON.stringify(props, null, 4));
+		}
+	}
+	vscode.commands.executeCommand('C_Cpp.ConfigurationSelect', name);
+}
 
 export function createTask(name: string, target: string, solution: string, properties: Record<string, string>, group?: vscode.TaskGroup): vscode.Task {
 	const definition: vscode.TaskDefinition = {
@@ -222,6 +245,8 @@ interface ProjectAndSolution {
 	solution:	Solution;
 }
 
+export type IconPath = string | vscode.Uri | { light: string | vscode.Uri; dark: string | vscode.Uri } | vscode.ThemeIcon;
+
 class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationProvider {
 	public current?:	ProjectAndSolution;
 	public explorer?: 	SolutionExplorerProvider;
@@ -232,7 +257,7 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 	constructor(public context: vscode.ExtensionContext) {
 		this.registerCommand('vstools.addSolution',	(uri?: vscode.Uri) => {
 			if (uri) {
-				Solution.read(uri.fsPath).then(solution => {
+				Solution.load(uri.fsPath).then(solution => {
 					if (solution)
 						this.addSolution(solution);
 				});
@@ -383,12 +408,12 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 					console: 'externalTerminal'
 				});
 			}
-		}
+    }
 		return configs;
     }
 
 	async resolveDebugConfiguration(folder: vscode.WorkspaceFolder | undefined, debugConfiguration: vscode.DebugConfiguration) {
-		if (debugConfiguration.program.startsWith('${vstools:')) {
+		if (debugConfiguration.program?.startsWith('${vstools:')) {
 			const parsed = (await substitutions(debugConfiguration.program.slice(10, -1))).split(',');
 			const settings : Record<string, string> = Object.fromEntries(parsed.filter(i => i.includes('=')).map(i => i.split('=')));
 			if (settings.Configuration?.includes('|')) {
@@ -401,7 +426,7 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 				...debugConfiguration,
 				...await project?.debug(settings)
 			};
-		}
+    }
 		return debugConfiguration;
 	}
 
@@ -409,7 +434,6 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 		return debugConfiguration;
 	}
 
-	
 	public addSolution(solution: Solution) {
 		if (this.solutions.length == 0) {
 			this.current	= {project: solution.startup!, solution};
@@ -417,40 +441,30 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 
 			vscode.commands.executeCommand('setContext', 'vstools.loaded', true);
 
-			//this.registerCommand('vstools.solutionPath', 	() => solution.fullpath);
+			//this.registerCommand('vstools.solutionPath', 		() => solution.fullpath);
 			//this.registerCommand('vstools.solutionDir', 		() => VSDir(solution.fullpath));
-			this.registerCommand('vstools.startupExecutable',	() =>
-				this.current?.solution.startup?.name
-			);
-			this.registerCommand('vstools.startupProject',	() =>
-				this.current?.solution.startup?.name ?? ''
-			);
-			this.registerCommand('vstools.projectDir', 	(project?: string) => {
-				const proj = this.getProject();
+			//this.registerCommand('vstools.startupExecutable',	() => this.current?.solution.startup?.name);
+
+			this.registerCommand('vstools.startupProject',	() => this.current?.solution.startup?.name ?? '');
+			this.registerCommand('vstools.configuration', 	() => this.current?.solution.activeConfiguration.Configuration);
+			this.registerCommand('vstools.platform', 		() => this.current?.solution.activeConfiguration.Platform);
+
+			this.registerCommand('vstools.projectDir', 		(project?: string) => {
+				const proj = this.getProject(project);
 				if (proj)
 					return path.dirname(proj.fullpath) + path.sep;
 			});
-			this.registerCommand('vstools.projectName', 	() =>
-				this.current?.project.name
-			);
-			this.registerCommand('vstools.configuration', 	() => 
-				this.current?.solution.activeConfiguration.Configuration
-			);
-			this.registerCommand('vstools.platform', 		() =>
-				this.current?.solution?.activeConfiguration.Platform
-			);
+			this.registerCommand('vstools.projectName', 	() => this.current?.project.name);
 			this.registerCommand('vstools.projectConfiguration', (project?: string) => {
 				const ps = this.getProjectAndSolution(project);
-				if (ps) {
-					const config = ps.project.configuration[ps.solution.active.join('|')];
-					return [config.Configuration, config.Platform].join('|');
-				}
+				if (ps)
+					return ps.solution.projectActiveConfiguration(ps.project);
 			});
 			this.registerCommand('vstools.projectSetting', (setting: string) => {
 				const ps = this.current ?? {project:solution.startup, solution};
 				if (ps.project) {
-					const config = ps.project.configuration[ps.solution.active.join('|')];
-					return ps.project.getSetting({"Configuration": config.Configuration, "Platform": config.Platform}, setting);
+					const config = ps.solution.projectActiveConfiguration(ps.project);
+					return ps.project.getSetting(config, setting);
 				}
 			});
 
@@ -461,9 +475,27 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 		this.solutions.push(solution);
 		this.context.subscriptions.push(solution);
 		this.explorer!.addSolution(solution);
+
+		solution.onDidChange(async what => {
+			switch (what) {
+				case 'config': {
+					const project = solution.startup;
+					if (project instanceof MsBuildProject) {
+						const ClCompile		= project.msbuild.items["ClCompile"];
+						if (ClCompile) {
+							const config 	= solution.projectActiveConfiguration(project);
+							const [props]	= await project.evaluateProps(config);
+							const [settings]= await ClCompile.evaluate(props);
+							console.log(settings.AdditionalIncludeDirectories);
+							SetCPPConfiguration(`${solution.activeConfiguration.Configuration}|${solution.activeConfiguration.Platform}`, settings.AdditionalIncludeDirectories.split(';'));
+						}
+					}
+					break;
+				}
+			}
+		});
 	}
 }
-
 
 //-----------------------------------------------------------------------------
 //	main entry
@@ -472,6 +504,8 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 export let Extension: ExtensionClass;
 
 export function activate(context: vscode.ExtensionContext) {
+    context.subscriptions.push(outputChannel = vscode.window.createOutputChannel("VS Tools Debug"));
+
 	Extension = new ExtensionClass(context);
 
 	if (!vsdir) {
@@ -483,14 +517,34 @@ export function activate(context: vscode.ExtensionContext) {
 
 	if (vscode.workspace.workspaceFolders) {
 		vscode.workspace.findFiles('*.sln').then(async slns =>
-			slns.map(i => Solution.read(i.fsPath).then(solution => solution && Extension.addSolution(solution)))
+			slns.map(i => Solution.load(i.fsPath).then(solution => solution && Extension.addSolution(solution)))
 		);
 
 		fs.onChange(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '*.sln'), (fullpath, mode) => {
 			if (mode === fs.Change.created)
-				Solution.read(fullpath).then(solution => solution && Extension.addSolution(solution));
+				Solution.load(fullpath).then(solution => solution && Extension.addSolution(solution));
 		});
 	}
+
+	context.subscriptions.push(vscode.window.registerUriHandler({
+		async handleUri(uri: vscode.Uri) {
+			const command = uri.path.split('/').at(-1);
+			if (command) {
+				try {
+					let args = JSON.parse(uri.query);
+					if (typeof args === 'string' || typeof args === 'number')
+						args = [args];
+					const result = await vscode.commands.executeCommand(command, ...args);
+					vscode.window.showInformationMessage(`${command}(${uri.query}) returned ${result}`);
+				} catch (e) {
+					const result = await vscode.commands.executeCommand(command, uri.query);
+					vscode.window.showInformationMessage(`${command}("${uri.query??''}") returned ${result}`);
+				}
+
+			}
+		}
+	}));
+	
 }
 
 //export async function deactivate() {

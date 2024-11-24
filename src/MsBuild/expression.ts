@@ -7,7 +7,7 @@ import * as insensitive from '../shared/CaseInsensitive';
 import * as utils from '../shared/utils';
 import {Version, version_compare, extendVersion} from './Version';
 import * as Locations from './Locations';
-import {vsdir} from '../extension';
+import {vsdir, log} from '../extension';
 
 type StringFunction = (...params: string[])=>any;
 
@@ -468,7 +468,7 @@ class Microsoft_Build_Utilities_ToolLocationHelper extends StaticFunctions {
 			const platforms: string[] = [];
 			for (const sdk of SDKs) {
 				if (insensitive.compare(sdk.platform, sdkIdentifier) == 0 && sdk.version.compare(version) == 0 && sdk.Platforms)
-					utils.array_add(platforms, Object.keys(sdk.Platforms));
+					utils.arrayAppend(platforms, Object.keys(sdk.Platforms));
 			}
 			return platforms.map(i => Version.parse(i)).filter(i => !!i).reduce((acc, v) => v.compare(acc) > 0 ? v : acc, new Version);
 		}
@@ -519,7 +519,7 @@ export async function substitutor(m: RegExpExecArray, right:string, properties: 
 				: properties[m[1].toUpperCase()];
 	
 	if (!replace) {
-		//console.log(`no substitute for ${m[1]}`);
+		//log(`no substitute for ${m[1]}`);
 		if (leave_undefined)
 			return m[0] + right;
 		replace = '';
@@ -576,7 +576,7 @@ export async function substitutor(m: RegExpExecArray, right:string, properties: 
 				if (right[close] === ']')
 					++close;
 				else
-					console.log('Missing closing bracket');
+					log('Missing closing bracket');
 				re2.lastIndex = close;
 			}
 		}

@@ -5,7 +5,7 @@ import * as fs from './vscode-utils/fs';
 import * as MsBuild from './MsBuild';
 import {MsBuildProject} from './MsBuildProject';
 import {ProjectItemEntry, Folder, FolderTree} from "./Project";
-import {XMLCache, xml_save} from './extension';
+import {XMLCache, xml_save, log} from './extension';
 
 //-----------------------------------------------------------------------------
 //	Filters
@@ -109,7 +109,7 @@ export class VCProject extends MsBuildProject {
 		const filterpath	= this.fullpath + ".filters";
 		this.filtertree		= this.loadFilters(filterpath);
 		fs.onChange(filterpath, (path: string) => {
-			console.log("Filter changed");
+			log("Filter changed");
 			this.filtertree = this.loadFilters(path);
 		});
 	}

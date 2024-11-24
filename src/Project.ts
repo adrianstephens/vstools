@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from "path";
-import { array_remove } from "./shared/utils";
+import { arrayRemove } from "./shared/utils";
 import { Solution, write_section } from "./Solution";
 
 export type Properties	= Record<string, string>;
@@ -136,7 +136,7 @@ export class Project extends vscode.Disposable {
 	}
 	public removeProject(project?: Project): void {
 		if (project)
-			array_remove(this.childProjects, project);
+			arrayRemove(this.childProjects, project);
 	}
 	public addFile(name: string, filepath: string, markDirty = true): boolean {
 		return false;
@@ -223,7 +223,7 @@ export class SolutionFolder extends Project {
 	
 	public removeEntry(entry: ProjectItemEntry): boolean {
 		this.dirty();
-		return array_remove(this.solutionItems, entry);
+		return arrayRemove(this.solutionItems, entry);
 	}
 	
 	public removeFile(file: string): boolean {

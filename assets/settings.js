@@ -263,7 +263,7 @@ window.addEventListener('message', event => {
                 if (input)
                     setInput(input, isArray ? value[0] : value, placeholder);
                 else
-                    console.log("didn't find" + i);
+                    log("didn't find" + i);
             }
             break;
         }

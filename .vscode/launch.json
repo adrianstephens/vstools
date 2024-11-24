@@ -11,6 +11,7 @@
 			"runtimeExecutable": "${execPath}",
 			"args": [
 				"--trace-deprecation",
+				"--log=trace",
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"D:\\dev\\shared\\"
 			],

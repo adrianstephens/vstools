@@ -342,7 +342,7 @@ const renameDisposable = vscode.workspace.onDidRenameFiles((event) => {
 		console.log(`  Old path: ${file.oldUri.fsPath}`);
 		console.log(`  New path: ${file.newUri.fsPath}`);
 
-		// You can add your custom logic here to handle the rename
+		// You can add your custom console.logic here to handle the rename
 	}
 });
 */
@@ -403,7 +403,7 @@ export function removeOnChange(fullpath: string, func: (path: string)=>void) {
 			//file
 			const callbacks = fileCallbacks[fullpath];
 			if (callbacks) {
-				utils.array_remove(callbacks, func);
+				utils.arrayRemove(callbacks, func);
 				if (callbacks.length === 0)
 					delete fileCallbacks[fullpath];
 			}
@@ -428,7 +428,7 @@ export function removeOnChange(fullpath: string, func: (path: string)=>void) {
 			//rec
 			const callbacks = recCallbacks[dir];
 			if (callbacks) {
-				utils.array_remove(callbacks, func);
+				utils.arrayRemove(callbacks, func);
 				if (callbacks.length === 0) {
 					delete recCallbacks[dir];
 					const watcher = recWatchers[dir];

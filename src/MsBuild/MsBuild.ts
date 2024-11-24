@@ -6,7 +6,7 @@ import * as expression from "./expression";
 import * as insensitive from '../shared/CaseInsensitive';
 import * as utils from '../shared/utils';
 import {ProjectItemEntry, Properties} from "../Project";
-import {XMLCache, xml_load, xml_save, vsdir, createTask} from '../extension';
+import {XMLCache, xml_load, xml_save, vsdir, createTask, log} from '../extension';
 
 //-----------------------------------------------------------------------------
 //	types
@@ -125,7 +125,7 @@ export async function evaluateImport(import_path: string, properties: PropertyCo
 	const files		= await fs.search(resolved);
 	for (const i of files) {
 		if (imports && imports.all.indexOf(i) !== -1) {
-			console.log(`Double import: ${i}`);
+			log(`Double import: ${i}`);
 			continue;
 		}
 
@@ -133,7 +133,7 @@ export async function evaluateImport(import_path: string, properties: PropertyCo
 		if (root?.name == 'Project') {
 			const prev = properties.currentPath();
 			properties.setPath(i);
-			//console.log(`vscode://file/${i.replaceAll(' ','%20')}`);
+			//log(`vscode://file/${i.replaceAll(' ','%20')}`);
 			await evaluatePropsAndImports(root.allElements(), properties, imports, modified);
 			if (prev)
 				properties.setPath(prev);
@@ -145,7 +145,7 @@ export async function evaluateImport(import_path: string, properties: PropertyCo
 				imports.all.push(i);
 			}
 		} else {
-			console.log(`Invalid import: ${i} from ${import_path}`);
+			log(`Invalid import: ${i} from ${import_path}`);
 		}
 	}
 }
@@ -263,7 +263,7 @@ async function evaluate_data(items: xml.Element[], settings: Settings, propertie
 				.then(subs => utils.async_replace_back(subs, /%\((\w+)(\))/g, async (m: RegExpExecArray, right:string) => {
 					const replace = await settings[m[1]];
 					if (!replace) {
-						console.log(`no % substitute for ${m[1]}`);
+						log(`no % substitute for ${m[1]}`);
 						return m[0] + right;
 					}
 					return replace + right;
@@ -296,7 +296,7 @@ export function hasMetadata(entry: ProjectItemEntry) : entry is XMLProjectItemEn
 function metadata(entry: ProjectItemEntry) : xml.Element[]{
 	if (Array.isArray(entry.data.elements))
 		return entry.data.elements;
-	console.log("bad metadata!");
+	log("bad metadata!");
 	return [];
 }
 
@@ -459,7 +459,7 @@ export class Items {
 			}
 		}
 		if (revert && value === '<inherit>') {
-			utils.array_remove(d.data, loc);
+			utils.arrayRemove(d.data, loc);
 			return;
 			
 		} else if (loc) {
@@ -635,7 +635,7 @@ export function addSetting(file: xml.Element|undefined, name: string, value: str
 			}
 		}
 		if (revert && value === '<inherit>') {
-			utils.array_remove(d.children, loc);
+			utils.arrayRemove(d.children, loc);
 			return;
 
 		} else if (loc) {

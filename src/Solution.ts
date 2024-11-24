@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import * as binary from "./shared/binary";
 import * as fs from './vscode-utils/fs';
 import * as utils from './shared/utils';
-import {createTask} from './extension';
+import {createTask, log} from './extension';
 import {Project, SolutionFolder, WebProject, WebDeploymentProject} from "./Project";
 import * as CompDoc from "./shared/CompoundDocument";
 import {MsBuildProject, ManagedProjectMaker, CPSProjectMaker, ESProject, AndroidProject} from "./MsBuildProject";
@@ -142,11 +142,7 @@ function createProject(parent:Solution, type:string, name:string, fullpath: stri
 		: new Project(type, name, fullpath, guid, basePath);
 }
 
-function createProjectExt(parent:Solution, fullpath:string) {
-	const parsed	= path.parse(fullpath);
-	const type		= known_exts[parsed.ext.substring(1)];
-	return createProject(parent, type, parsed.name, fullpath, '');
-}
+
 
 export function getProjectIconName(guid : string) : string | undefined {
 	return known_guids[guid]?.icon;
@@ -205,19 +201,19 @@ export function write_section(type:string, name:string, when: string, section: R
 }
 
 //-----------------------------------------------------------------------------
-//	suo
+//	suo helpers
 //-----------------------------------------------------------------------------
 
-const string0Type	= new binary.StringType(binary.UINT32_LE, 'utf16le', true);
-const stringType	= new binary.StringType(binary.UINT32_LE, 'utf16le', false);
-const string1Type	= new binary.StringType(binary.UINT32_LE, 'utf16le', true, 1);
-const stringArrayType = new binary.ArrayType(binary.UINT32_LE, string1Type);
+const string0Type	= binary.StringType(binary.UINT32_LE, 'utf16le', true);
+const stringType	= binary.StringType(binary.UINT32_LE, 'utf16le', false);
+const string1Type	= binary.StringType(binary.UINT32_LE, 'utf16le', true, 1);
+const stringArrayType = binary.ArrayType(binary.UINT32_LE, string1Type);
 
 function read_token(reader: binary.stream) {
-	const token = reader.read(binary.UINT16_LE);
+	const token = binary.read(reader, binary.UINT16_LE);
 	switch (token) {
-		case 3: return reader.read(binary.UINT32_LE);
-		case 8: return reader.read(stringType);
+		case 3: return binary.read(reader, binary.UINT32_LE);
+		case 8: return binary.read(reader, stringType);
 		default: return String.fromCharCode(token);
 	}
 }
@@ -226,7 +222,7 @@ function read_config(data: Uint8Array) {
 	const config : Record<string, any> = {};
 	const reader = new binary.stream(data);
 	while (reader.remaining()) {
-		const name = reader.read(string0Type);
+		const name = binary.read(reader, string0Type);
 		let token = read_token(reader);	//=
 		const value = read_token(reader);
 		config[name] = value;
@@ -238,19 +234,19 @@ function read_config(data: Uint8Array) {
 
 function write_token(writer: binary.stream, token: any) {
 	switch (typeof token) {
-		case 'number': writer.write(binary.UINT16_LE, 3); writer.write(binary.UINT32_LE, token); break;
-		case 'string': writer.write(binary.UINT16_LE, 8); writer.write(stringType, token); break;
+		case 'number': binary.write(writer, binary.UINT16_LE, 3); binary.write(writer, binary.UINT32_LE, token); break;
+		case 'string': binary.write(writer, binary.UINT16_LE, 8); binary.write(writer, stringType, token); break;
 		default: throw "bad token";
 	}
 }
 function write_char_token(writer: binary.stream, token: string) {
-	writer.write(binary.UINT16_LE, token.charCodeAt(0));
+	binary.write(writer, binary.UINT16_LE, token.charCodeAt(0));
 }
 
 function write_config(config : Record<string, any>): Uint8Array {
 	const writer = new binary.stream_grow();
 	Object.entries(config).forEach(([name, value]) => {
-		writer.write(string0Type, name);
+		binary.write(writer, string0Type, name);
 		write_char_token(writer, '=');	//=
 		write_token(writer, value);
 		write_char_token(writer, ';');	//=
@@ -276,24 +272,24 @@ function suo_path(filename: string) {
 //	Solution
 //-----------------------------------------------------------------------------
 
-export class Solution extends vscode.Disposable {
+export class Solution {
 	public projects:		Record<string, Project> = {};
 	public parents:			Record<string, Project> = {};
-
-	private config_list: 	string[] = [];
-	private platform_list: 	string[] = [];
-
-	public header						= '';
-	public VisualStudioVersion			= '';
-	public MinimumVisualStudioVersion	= '';
-	public global_sections: Record<string, {section: Record<string, string>, when:string}> = {};
 	public debug_include:	string[]	= [];
 	public debug_exclude:	string[]	= [];
-	public active						= [0, 0];
-	public config?:			Record<string, any>;
+
+	private config_list: 	string[]	= [];
+	private platform_list: 	string[]	= [];
+
+	private header						= '';
+	private VisualStudioVersion			= '';
+	private MinimumVisualStudioVersion	= '';
+	private global_sections: Record<string, {section: Record<string, string>, when:string}> = {};
+	private	active						= [0, 0];
+	private	config:			Record<string, any> = {};
 	private writing			= false;
 	private _onDidChange	= new vscode.EventEmitter<string>();
-	readonly onDidChange	= this._onDidChange.event;
+
 
 	update = new utils.CallCombiner(async () => {
 		this.writing = true;
@@ -306,46 +302,84 @@ export class Solution extends vscode.Disposable {
 		open_suo(suopath).then(suo => {
 			const configStream = suo.find("SolutionConfiguration");
 			if (configStream) {
-				const config	= this.config!;
-				config.Bogus	= 'interesting';
+				const config	= this.config;
 				const data2 	= write_config(config);
 				const config2	= read_config(data2);
-				console.log(config2);
+				log(config2.toString());
 				suo.write(configStream, data2);
 				suo.flush(suopath);
 			}
 		});
 	}, 2000);
 
+	get onDidChange() {
+		return this._onDidChange.event;
+	}
+
 	public get startup() : Project | undefined {
-		return this.projects[this.config?.StartupProject];
+		return this.projects[this.config.StartupProject];
 	}
 	public set startup(project: Project | string) {
 		if (typeof project !== 'string')
 			project = project.guid;
-		if (this.config!.StartupProject !== project) {
-			this.config!.StartupProject = project;
+		if (this.config.StartupProject !== project) {
+			this.config.StartupProject = project;
 			this.dirty_suo();
 			this._onDidChange.fire('startup');
 		}
+	}
+
+	public get activeConfiguration() {
+		return {
+			Configuration:	this.config_list[this.active[0]],
+			Platform: 		this.platform_list[this.active[1]]
+		};
+	}
+	public set activeConfiguration({Configuration, Platform}: {Configuration: string, Platform: string}) {
+		const c = this.config_list.indexOf(Configuration);
+		const p = this.platform_list.indexOf(Platform);
+
+		if ((c >= 0 && c !== this.active[0]) || (p >= 0 && p !== this.active[1])) {
+			if (c >= 0)
+				this.active[0]	= c;
+			else
+				Configuration	= this.config_list[this.active[0]];
+
+			if (p >= 0)
+				this.active[1]	= p;
+			else
+				Platform	= this.platform_list[this.active[1]];
+
+			this.config.ActiveCfg = `${Configuration}|${Platform}`;
+			this.dirty_suo();
+			this._onDidChange.fire('config');
+		}
+	}
+
+	public projectActiveConfiguration(project: Project) {
+		const c = project.configuration[this.active.join('|')];
+		return {
+			Configuration:	c?.Configuration ?? this.config_list[this.active[0]],
+			Platform: 		c?.Platform ?? this.platform_list[this.active[1]],
+		};
 	}
 
 	public get childProjects() {
 		return Object.keys(this.projects).filter(p => !this.parents[p]).map(p => this.projects[p]);
 	}
 
+	dispose() {
+		utils.asyncMap(Object.keys(this.projects), async k => this.projects[k].clean());
+	}
 
 	private constructor(public fullpath: string) {
-		super(() => 
-			utils.asyncMap(Object.keys(this.projects), async k => this.projects[k].clean())
-		);
 
 		fs.onChange(fullpath, async (newpath:string, mode: number) => {
 			switch (mode) {
 				case fs.Change.changed: {
 					if (this.writing)
 						break;
-					console.log("I've changed");
+					log("I've changed");
 					const parser = await Solution.getParser(fullpath);
 					if (parser) {
 						this.parse(parser);
@@ -369,7 +403,7 @@ export class Solution extends vscode.Disposable {
 		});
 	}
 
-	public static async getParser(fullpath: string) {
+	private static async getParser(fullpath: string) {
 		const bytes		= await fs.loadFile(fullpath);
 		const content	= new TextDecoder().decode(bytes);
 		const parser	= new LineParser(content.split('\n'));
@@ -382,7 +416,7 @@ export class Solution extends vscode.Disposable {
 		}
 	}
 
-	public static async read(fullpath: string) : Promise<Solution | undefined> {
+	public static async load(fullpath: string) : Promise<Solution | undefined> {
 		const parser = await this.getParser(fullpath);
 		if (parser) {
 			const solution = new Solution(fullpath);
@@ -393,23 +427,21 @@ export class Solution extends vscode.Disposable {
 					const reader = new binary.stream(suo.read(sourceStream));
 					reader.skip(4);
 					reader.skip(4);
-					solution.debug_include = reader.read(stringArrayType);
+					solution.debug_include = binary.read(reader, stringArrayType);
 					reader.skip(4);
-					solution.debug_exclude = reader.read(stringArrayType);
+					solution.debug_exclude = binary.read(reader, stringArrayType);
 				}	
 
 				const configStream = suo.find("SolutionConfiguration");
 				return configStream && read_config(suo.read(configStream));
 
-			}).catch(error => (console.log(error), undefined));
+			}).catch(error => (log(error), undefined));
 	
 			solution.parse(parser);
 	
-			solution.config = await aconfig;
-			if (solution.config) {
-				const parts			= solution.config.ActiveCfg.split('|');
-				solution.active		= [Math.max(solution.config_list.indexOf(parts[0]), 0), Math.max(solution.platform_list.indexOf(parts[1]), 0)];
-			}
+			solution.config = await aconfig ?? {};
+			const parts		= solution.config.ActiveCfg.split('|');
+			solution.active	= [Math.max(solution.config_list.indexOf(parts[0]), 0), Math.max(solution.platform_list.indexOf(parts[1]), 0)];
 			return solution;
 		}
 	}
@@ -419,7 +451,7 @@ export class Solution extends vscode.Disposable {
 		this.update.trigger();
 	}
 
-	public dirty_suo() {
+	private dirty_suo() {
 		this.update_suo.trigger();
 	}
 
@@ -614,13 +646,6 @@ MinimumVisualStudioVersion = ${this.MinimumVisualStudioVersion}
 	public platformList() : string[] {
 		return this.makeProxy(this.platform_list);
 	}
-	public get activeConfiguration() {
-		return {
-			Configuration:	this.config_list[this.active[0]],
-			Platform: 		this.platform_list[this.active[1]]
-		};
-	}
-
 	public async addProject(proj: Project) {
 		if (!proj.guid)
 			proj.guid = crypto.randomUUID();
@@ -670,7 +695,9 @@ MinimumVisualStudioVersion = ${this.MinimumVisualStudioVersion}
 	}
 
 	public async addProjectFilename(filename: string) {
-		this.addProject(createProjectExt(this, filename));
+		const parsed	= path.parse(filename);
+		const type		= known_exts[parsed.ext.substring(1)];
+		this.addProject(createProject(this, type, parsed.name, filename, ''));
 	}
 
 	public removeProject(project: Project) {
