@@ -1,13 +1,15 @@
-import * as vscode from "vscode";
-import * as xml from "./xml/xml";
-import * as utils from "./shared/utils";
-import * as MsBuild from "./MsBuild";
-import * as insensitive from './shared/CaseInsensitive';
-import {XMLCache, Extension, log} from "./extension";
-import {Solution} from "./Solution";
-import {Properties} from "./Project";
-import {MsBuildProjectBase} from "./MsBuildProject";
-import {jsx, fragment, render, codicons, Label, ClickableIcon} from "./shared/jsx";
+import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from '@shared/fs';
+import * as xml from '@shared/xml';
+import * as utils from '@shared/utils';
+import * as MsBuild from './MsBuild';
+import * as insensitive from '@shared/CaseInsensitive';
+import {XMLCache, Extension, log} from './extension';
+import {Solution} from './Solution';
+import {Properties} from './Project';
+import {MsBuildProjectBase} from './MsBuildProject';
+import {codicons, Label, ClickableIcon} from '@shared/jsx-runtime';
 
 const Uri = vscode.Uri;
 let the_panel: 					vscode.WebviewPanel | undefined;
@@ -41,14 +43,13 @@ function DropDownList(props: {id: string, values: DropDownEntry[], value?: strin
 	</select>;
 }
 
-function CheckList(props: {values: string[], value?: string}) {
-	return <>{props.values.map(name =>
-		<div><input type="checkbox" id={name} name={name} checked={name == props.value}><label for={name}>{name}</label></input></div>
+function CheckList({values, value}: {values: string[], value?: string}) {
+	return <>{values.map(name =>
+		<div><input type="checkbox" id={name} name={name} checked={name == value}><label for={name}>{name}</label></input></div>
 	)}</>;
 }
 
-function InputItem(props: {id:string, item: xml.Element}) {
-	const {id, item} = props;
+function InputItem({id, item}: {id:string, item: xml.Element}) {
 	const id2 = id+'.resolved';
 
 	switch (item.name) {
@@ -407,9 +408,28 @@ function isLocal(project: MsBuildProjectBase, result: Result|undefined) : boolea
 //-----------------------------------------------------------------------------
 
 async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config: Properties, project: MsBuildProjectBase, file?: string) {
-	let settings	: Record<string, Result>	= {};
-	let configs		: Record<string, any>[]		= [];
-	const modifications: Record<string, string> = {};
+	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+
+	panel.webview.html =  `<!DOCTYPE html>` + JSX.render(<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<link rel="stylesheet" href={getUri("settings.css")}/>
+			</head>
+		<body>
+			<div class="loading-container">
+				<div class="spinner"></div>
+				<div class="loading-text">Loading settings...</div>
+			</div>
+		</body>
+	</html>);
+
+	await project.ready;
+	await project.settings_ready;
+
+	let settings: 			Record<string, Result>	= {};
+	let configs: 			Record<string, any>[]	= [];
+	const modifications: 	Record<string, string>	= {};
 
 	//currently checked
 	let	platforms 		= [config.Platform];
@@ -436,6 +456,7 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 		});
 		setItems(panel, values);
 	}
+
 	function init() {
 		panel.webview.postMessage({
 			command:'splice',
@@ -456,6 +477,7 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 			[`platform.${config.Platform}.check`]: true
 		});
 	}
+
 	function update() {
 		if ('ProjectConfiguration' in project.msbuild.items) {
 			configs	= project.msbuild.items.ProjectConfiguration.entries.filter(i => 
@@ -498,7 +520,7 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 	
 	disposeDidChangeViewState = panel.onDidChangeViewState(e => {
 		if (e.webviewPanel.visible) {
-			setAll();
+			//setAll();
 			for (const i in modifications)
 				addClass(panel, by_id(i), 'modified', true, 1);
 		}
@@ -507,6 +529,11 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 	// Handle messages from the webview
 	disposeDidReceiveMessage = panel.webview.onDidReceiveMessage(async message => {
 		switch (message.command) {
+			case 'ready':
+				init();
+				update();
+				break;
+			
 			case 'configuration':
 				configurations = message.value;
 				update();
@@ -550,28 +577,28 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 		}
 	}, null, Extension.context.subscriptions);
 
-	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+
 	panel.webview.html = '';
-	panel.webview.html = `<!DOCTYPE html>` + render(<html lang="en">
+	panel.webview.html = `<!DOCTYPE html>` + JSX.render(<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<link rel="stylesheet" href={getUri("settings.css")}/>
 		</head>
 		
-		<body>
+		<body style="display:none">
 			<div style="display:flex">
 
 				{/*SIDEBAR*/}
 				<div class="settings-sidebar">
-					<div style="display:flex">
-						<div id="configuration" style="flex:1"><Label id="Configuration" display="Configuration"/>
+					<div class='checklist-container'>
+						<div id="configuration" class="checklist"><Label id="Configuration" display="Configuration"/>
 							<div hidden id="configuration.$(id)">
 								<div><input type="checkbox" id="configuration.$(id).check" name="$(id)"><span contenteditable name="configuration.$(id)">$(name)</span></input></div>
 							</div>
 							{/*<CheckList values={project.configurationList()} value = {config.Configuration}/>*/}
 						</div>
-						<div id="platform" style="flex:1"><Label id="Platform" display="Platform"/>
+						<div id="platform" class="checklist"><Label id="Platform" display="Platform"/>
 							<div hidden id="platform.$(id)">
 								<div><input type="checkbox" id="platform.$(id).check" name="$(id)"><span contenteditable name="platform.$(id)">$(name)</span></input></div>
 							</div>
@@ -588,6 +615,8 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 					</ul>
 				</div>
 
+				<div class="splitter"/>
+
 				{/*CONTENTS*/}
 				<div class="settings-content">{schemas.map((schema, i) => schema.toHTML())}</div>
 
@@ -597,9 +626,6 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 
 		</body>
 	</html>);
-
-	init();
-	update();
 }
 
 //-----------------------------------------------------------------------------
@@ -775,7 +801,7 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
 
 	panel.webview.html = '';
-	panel.webview.html = `<!DOCTYPE html>`+ render(<html lang="en">
+	panel.webview.html = `<!DOCTYPE html>`+ JSX.render(<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -791,16 +817,16 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 						<div id="configuration" style="flex:1">
 							<Label id="Configuration" display="Configuration"/>
 							<div hidden id="configuration.$(id)">
-								<ClickableIcon code={codicons.trash} id="configuration.$(id).delete"/>
-								<ClickableIcon code={codicons.add} id="configuration.$(id).duplicate"/>
+								<ClickableIcon icon={codicons.trash} id="configuration.$(id).delete"/>
+								<ClickableIcon icon={codicons.add} id="configuration.$(id).duplicate"/>
 								<input type="checkbox" name="$(id)" id="configuration.$(id).check"><span contenteditable name="configuration.$(id)">$(name)</span></input>
 							</div>
 						</div>
 						<div id="platform" style="flex:1">
 							<Label id="Platform" display="Platform"/>
 							<div hidden id="platform.$(id)">
-								<ClickableIcon code={codicons.trash} id="platform.$(id).delete"/>
-								<ClickableIcon code={codicons.add} id="platform.$(id).duplicate"/>
+								<ClickableIcon icon={codicons.trash} id="platform.$(id).delete"/>
+								<ClickableIcon icon={codicons.add} id="platform.$(id).duplicate"/>
 								<input type="checkbox" name="$(id)" id="platform.$(id).check"><span contenteditable name="platform.$(id)">$(name)</span></input>
 							</div>
 						</div>
@@ -808,6 +834,8 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 					<ul id = "sidebar">
 					</ul>
 				</div>
+
+				<div class="splitter"/>
 
 				{/*CONTENTS*/}
 				<div class="settings-content">
@@ -852,6 +880,31 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 	update();
 }
 
+//-----------------------------------------------------------------------------
+//	PrropsSettings
+//-----------------------------------------------------------------------------
+
+async function PropsSettings(panel: vscode.WebviewPanel, title: string, config: Properties, project: MsBuildProjectBase, file?: string) {
+	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+
+	panel.webview.html = `<!DOCTYPE html>`+ JSX.render(<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<link rel="stylesheet" href={getUri("settings.css")}/>
+		</head>
+
+		<body>
+			<h1>TBD</h1>
+		</body>
+	</html>);
+
+}
+
+//-----------------------------------------------------------------------------
+//	Main
+//-----------------------------------------------------------------------------
+
 export function exists() {
 	return !!the_panel;
 }
@@ -868,13 +921,12 @@ export function Set(title: string, config: Properties, project: MsBuildProjectBa
 		disposeDidChangeViewState.dispose();
 		disposeDidReceiveMessage.dispose();
 
-		panel = the_panel;
+		panel		= the_panel;
 		panel.title = title;
-
 		panel.reveal(panel.viewColumn);
 	}
 
-	return project instanceof Solution
-		? SolutionSettings(panel, title, config, project)
+	return project instanceof Solution				? SolutionSettings(panel, title, config, project)
+		: file && path.extname(file) === 'props'	? PropsSettings(panel, title, config, project, file)
 		: ProjectSettings(panel, title, config, project, file);
 }

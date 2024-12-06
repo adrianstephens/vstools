@@ -9,17 +9,17 @@
 		],
 		"baseUrl": ".",
 		"paths": {
+			"@shared/*": ["./shared/src/*"],
 			"./out/*": ["./src/*"]
 		},
 		"outDir": "out",
 		"sourceMap": true,
 		"strict": true,
-		"rootDir": "src",
-		"jsx": "react",
-		"jsxFactory": "jsx",
-		"jsxFragmentFactory": "fragment",
+		"rootDir": ".",
+		"jsx": "react-jsx",
+		"jsxImportSource": "@shared",
 		"forceConsistentCasingInFileNames": true
 	},
-	"include": ["src"],
+	"include": ["src/extension.ts", "shared/src/jsx.d.ts"],
 	"exclude": ["node_modules", ".vscode-test", "hidden"]
 }

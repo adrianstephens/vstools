@@ -1,14 +1,14 @@
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as xml from './xml/xml';
-import * as fs from './vscode-utils/fs';
-import * as utils from './shared/utils';
-import { CLR } from './shared/clr';
-import { PE } from './shared/pe';
+import * as xml from '@shared/xml';
+import * as fs from '@shared/fs';
+import * as utils from '@shared/utils';
+import { CLR } from '@shared/clr';
+import { PE } from '@shared/pe';
 import { XMLCache, vsdir, log } from './extension';
 import {Locations} from './MsBuild';
 import {execFile} from 'child_process';
-import * as insensitive from './shared/CaseInsensitive';
+import * as insensitive from '@shared/CaseInsensitive';
 
 function replace(s: string, substitutions: Record<string, string>) {
 	return utils.replace(s, /\$(\w+)\$/g, m=> substitutions[m[1]] ?? process.env[m[1]] ?? m[0]);
@@ -68,7 +68,8 @@ const virtual_registry = new utils.Lazy(() => {
 
 class Resources {
 	static async load(dll: string) {
-		const p = new PE(await fs.loadFile(dll));
+		const data = await fs.loadFile(dll);
+		const p = data && new PE(data);
 		if (p && p.opt) {
 			//const res_dir	= p.opt.DataDirectory.RESOURCE;
 			const native	= p.ReadDirectory('RESOURCE');
@@ -345,18 +346,20 @@ export class VSTemplate implements Template {
 
 			if (attr_boolean(item.attributes.ReplaceParameters)) {
 				const [data, encoding] = await fs.loadTextFileEncoding(path.join(source_dir, source));
-				const safeitemname = makeSafe(target);
+				if (data) {
+					const safeitemname = makeSafe(target);
 
-				const data2 = replace(data, {
-					fileinputname:		source,
-					itemname:			target,
-					safeitemname,
-					safeitemrootname:	safeitemname,
-					rootsafeitemname:	safeitemname,
-					rootnamespace:		projectname + target.replace('\\', '.'),
-					...substitutions
-				});
-				await fs.writeTextFile(target_filename, data2, encoding);
+					const data2 = replace(data, {
+						fileinputname:		source,
+						itemname:			target,
+						safeitemname,
+						safeitemrootname:	safeitemname,
+						rootsafeitemname:	safeitemname,
+						rootnamespace:		projectname + target.replace('\\', '.'),
+						...substitutions
+					});
+					await fs.writeTextFile(target_filename, data2, encoding);
+				}
 			} else {
 				try {
 					await fs.copyFile(path.join(source_dir, source), target_filename);

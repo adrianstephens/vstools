@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
-import * as path from "path";
+import * as path from 'path';
 import * as crypto from 'crypto';
-import * as binary from "./shared/binary";
-import * as fs from './vscode-utils/fs';
-import * as utils from './shared/utils';
+import * as binary from '@shared/binary';
+import * as fs from '@shared/fs';
+import * as utils from '@shared/utils';
 import {createTask, log} from './extension';
-import {Project, SolutionFolder, WebProject, WebDeploymentProject} from "./Project";
-import * as CompDoc from "./shared/CompoundDocument";
-import {MsBuildProject, ManagedProjectMaker, CPSProjectMaker, ESProject, AndroidProject} from "./MsBuildProject";
-import {VCProject} from "./vcxproj";
+import {Project, SolutionFolder, WebProject, WebDeploymentProject} from './Project';
+import * as CompDoc from '@shared/CompoundDocument';
+import {MsBuildProject, ManagedProjectMaker, CPSProjectMaker, ESProject, AndroidProject} from './MsBuildProject';
+import {VCProject} from './vcxproj';
 
 const known_guids : Record<string, {make: new (parent: any, type: string, name: string, fullpath: string, guid: string, solution_dir: string)=>Project, icon?: string}> = {
 /*Web Site*/										"{E24C65DC-7377-472B-9ABA-BC803B73C61A}": {make: WebProject},
@@ -256,11 +256,12 @@ function write_config(config : Record<string, any>): Uint8Array {
 
 async function open_suo(filename: string) : Promise<CompDoc.Reader> {
 	return fs.loadFile(filename).then(bytes => {
-		const reader = new binary.stream(bytes);
-		const h = new CompDoc.Header(reader);
-		if (!h.valid())
-			throw('invalid');
-		return new CompDoc.Reader(bytes.subarray(h.sector_size()), h);
+		if (bytes) {
+			const h = new CompDoc.Header(new binary.stream(bytes));
+			if (h.valid())
+				return new CompDoc.Reader(bytes.subarray(h.sector_size()), h);
+		}
+		throw('invalid');
 	});
 }
 
@@ -405,14 +406,16 @@ export class Solution {
 
 	private static async getParser(fullpath: string) {
 		const bytes		= await fs.loadFile(fullpath);
-		const content	= new TextDecoder().decode(bytes);
-		const parser	= new LineParser(content.split('\n'));
+		if (bytes) {
+			const content	= new TextDecoder().decode(bytes);
+			const parser	= new LineParser(content.split('\n'));
 
-		const slnFileHeaderNoVersion: string = "Microsoft Visual Studio Solution File, Format Version ";
-		for (let i = 0; i < 2; i++) {
-			const str = parser.readLine();
-			if (str && str.startsWith(slnFileHeaderNoVersion))
-				return parser;
+			const slnFileHeaderNoVersion: string = "Microsoft Visual Studio Solution File, Format Version ";
+			for (let i = 0; i < 2; i++) {
+				const str = parser.readLine();
+				if (str && str.startsWith(slnFileHeaderNoVersion))
+					return parser;
+			}
 		}
 	}
 

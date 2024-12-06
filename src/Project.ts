@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import * as path from "path";
-import { arrayRemove } from "./shared/utils";
-import { Solution, write_section } from "./Solution";
+import * as path from 'path';
+import { arrayRemove } from '@shared/utils';
+import { Solution, write_section } from './Solution';
 
 export type Properties	= Record<string, string>;
 

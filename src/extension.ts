@@ -1,13 +1,30 @@
+import * as path from 'path';
+const aliases: Record<string, string> = {};
+aliases['@shared'] = path.resolve(__dirname, '..', 'shared', 'src');
+
+import * as _Module from 'module';
+const Module = _Module as any as { _resolveFilename: (request: string, parent: NodeModule, isMain: boolean, options?: any) => string };
+
+const originalResolveFilename = Module._resolveFilename;
+Module._resolveFilename = (request, parent, isMain, options) => {
+	if (request.startsWith('@')) {
+        const parts = request.split('/');
+		const alias = aliases[parts[0]];
+		if (alias)
+			request = [alias, ...parts.slice(1)].join('/');
+    }
+    return originalResolveFilename(request, parent, isMain, options);
+};
+
 import * as vscode from 'vscode';
-import * as path from "path";
 import * as nodefs from 'fs';
-import * as fs from './vscode-utils/fs';
-import * as xml from "./xml/xml";
-import * as utils from './shared/utils';
+import * as fs from '@shared/fs';
+import * as xml from '@shared/xml';
+import * as utils from '@shared/utils';
 import * as MsBuild from './MsBuild';
-import {Solution} from "./Solution";
-import {Project, SolutionFolder} from "./Project";
-import {SolutionExplorerProvider} from "./SolutionView";
+import {Solution} from './Solution';
+import {Project, SolutionFolder} from './Project';
+import {SolutionExplorerProvider} from './SolutionView';
 import { MsBuildProject } from './MsBuildProject';
 
 const Uri	= vscode.Uri;
@@ -191,7 +208,7 @@ async function SetCPPConfiguration(name: string, dirs: string[]) {
 		if (!config)
 			props.configurations.push(config = { name });
 		
-		if (!utils.arrayEqual(config.includePath, dirs)) {
+		if (!config.includePath || !utils.arrayEqual(config.includePath, dirs)) {
 			config.includePath = dirs;
 			fs.writeTextFile(file, JSON.stringify(props, null, 4));
 		}
@@ -256,12 +273,8 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 
 	constructor(public context: vscode.ExtensionContext) {
 		this.registerCommand('vstools.addSolution',	(uri?: vscode.Uri) => {
-			if (uri) {
-				Solution.load(uri.fsPath).then(solution => {
-					if (solution)
-						this.addSolution(solution);
-				});
-			}
+			if (uri)
+				this.addSolution(uri.fsPath);
 		});
 	}
 
@@ -434,12 +447,15 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 		return debugConfiguration;
 	}
 
-	public addSolution(solution: Solution) {
+	public async addSolution(fullPath: string) {//solution: Solution) {
+		this.explorer ??= new SolutionExplorerProvider();
+
+		const solution = await Solution.load(fullPath);
+		if (!solution)
+			return;
+
 		if (this.solutions.length == 0) {
 			this.current	= {project: solution.startup!, solution};
-			this.explorer	= new SolutionExplorerProvider();
-
-			vscode.commands.executeCommand('setContext', 'vstools.loaded', true);
 
 			//this.registerCommand('vstools.solutionPath', 		() => solution.fullpath);
 			//this.registerCommand('vstools.solutionDir', 		() => VSDir(solution.fullpath));
@@ -474,7 +490,7 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 
 		this.solutions.push(solution);
 		this.context.subscriptions.push(solution);
-		this.explorer!.addSolution(solution);
+		this.explorer.addSolution(solution);
 
 		solution.onDidChange(async what => {
 			switch (what) {
@@ -487,7 +503,10 @@ class ExtensionClass implements vscode.TaskProvider, vscode.DebugConfigurationPr
 							const [props]	= await project.evaluateProps(config);
 							const [settings]= await ClCompile.evaluate(props);
 							console.log(settings.AdditionalIncludeDirectories);
-							SetCPPConfiguration(`${solution.activeConfiguration.Configuration}|${solution.activeConfiguration.Platform}`, settings.AdditionalIncludeDirectories.split(';'));
+							SetCPPConfiguration(
+								`${solution.activeConfiguration.Configuration}|${solution.activeConfiguration.Platform}`,
+								settings.AdditionalIncludeDirectories.split(';').filter((dir: string) => dir[0] !=='%')
+							);
 						}
 					}
 					break;
@@ -517,12 +536,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	if (vscode.workspace.workspaceFolders) {
 		vscode.workspace.findFiles('*.sln').then(async slns =>
-			slns.map(i => Solution.load(i.fsPath).then(solution => solution && Extension.addSolution(solution)))
+			slns.map(i => Extension.addSolution(i.fsPath))
 		);
 
 		fs.onChange(path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, '*.sln'), (fullpath, mode) => {
 			if (mode === fs.Change.created)
-				Solution.load(fullpath).then(solution => solution && Extension.addSolution(solution));
+				Extension.addSolution(fullpath);
 		});
 	}
 
@@ -544,7 +563,6 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		}
 	}));
-	
 }
 
 //export async function deactivate() {

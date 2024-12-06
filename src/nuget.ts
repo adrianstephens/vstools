@@ -1,4 +1,4 @@
-import * as path from "path";
+import * as path from 'path';
 import {XMLCache} from './extension';
 
 export type PackageVersion	= { version: string, downloads: number, '@id': string };

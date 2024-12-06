@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import * as xml from "../src/modules/xml";
-import * as utils from '../src/modules/utils';
+import * as xml from "../shared/xml";
+import * as utils from '../shared/utils';
 
 //-----------------------------------------------------------------------------
 //	colours

@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import * as path from "path";
-import * as fs from "../vscode-utils/fs";
-import * as xml from "../xml/xml";
-import * as expression from "./expression";
-import * as insensitive from '../shared/CaseInsensitive';
-import * as utils from '../shared/utils';
-import {ProjectItemEntry, Properties} from "../Project";
+import * as path from 'path';
+import * as fs from '@shared/fs';
+import * as xml from '@shared/xml';
+import * as expression from './expression';
+import * as insensitive from '@shared/CaseInsensitive';
+import * as utils from '@shared/utils';
+import {ProjectItemEntry, Properties} from '../Project';
 import {XMLCache, xml_load, xml_save, vsdir, createTask, log} from '../extension';
 
 //-----------------------------------------------------------------------------

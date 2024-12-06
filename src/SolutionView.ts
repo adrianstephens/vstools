@@ -1,18 +1,18 @@
-import * as vscode from "vscode";
-import * as path from "path";
-import * as fs from "./vscode-utils/fs";
+import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from '@shared/fs';
 import * as nuget from './nuget';
-import * as utils from "./shared/utils";
+import * as utils from '@shared/utils';
 
-import * as MsBuild from "./MsBuild";
-import * as SettingsView from "./SettingsView";
+import * as MsBuild from './MsBuild';
+import * as SettingsView from './SettingsView';
 
-import {Extension, searchOption, SubMenu, hierarchicalMenu, yesno, log, IconPath} from "./extension";
-import {Solution, getProjectIconName} from "./Solution";
-import {Project, Folder, FolderTree, ProjectItemEntry, makeFileEntry} from "./Project";
-import {MsBuildProjectBase} from "./MsBuildProject";
+import {Extension, searchOption, SubMenu, hierarchicalMenu, yesno, log, IconPath} from './extension';
+import {Solution, getProjectIconName} from './Solution';
+import {Project, Folder, FolderTree, ProjectItemEntry, makeFileEntry} from './Project';
+import {MsBuildProjectBase} from './MsBuildProject';
 import {VCProject} from './vcxproj';
-import {templates, Template} from "./Templates";
+import {templates, Template} from './Templates';
 
 const TreeItemCollapsibleState = vscode.TreeItemCollapsibleState;
 const by_uri: Record<string, TreeItem> = {};
@@ -510,6 +510,7 @@ export class SolutionExplorerProvider implements vscode.TreeDataProvider<TreeIte
 		};
 
 		this.treeView = vscode.window.createTreeView('vstools-view', options);
+		vscode.commands.executeCommand('setContext', 'vstools.loaded', true);
 
 		this.treeView.onDidChangeSelection(ev => {
 			let contextValue: string | undefined;
@@ -857,17 +858,13 @@ export class SolutionExplorerProvider implements vscode.TreeDataProvider<TreeIte
 		}
 		const project 	= this.getProject(item);
 		if (project instanceof MsBuildProjectBase) {
-			project.ready.then(async () => {
-				const config = solution.projectActiveConfiguration(project);
-
-				if (item instanceof FileTreeItem) {
-					const fullpath = item.fullPath;
-					SettingsView.Set(`${path.basename(fullpath)} Settings`, config, project, fullpath);
-				} else {
-					//project
-					SettingsView.Set(`${project.name} Project Settings`, config, project);
-				}
-			});
+			const config = solution.projectActiveConfiguration(project);
+			if (item instanceof FileTreeItem) {
+				const fullpath = item.fullPath;
+				SettingsView.Set(`${path.basename(fullpath)} Settings`, config, project, fullpath);
+			} else {
+				SettingsView.Set(`${project.name} Project Settings`, config, project);
+			}
 		}
 	}
 

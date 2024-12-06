@@ -1,10 +1,10 @@
-import * as path from "path";
-import * as insensitive from '../shared/CaseInsensitive';
-import * as fs from '../vscode-utils/fs';
-import * as utils from '../shared/utils';
+import * as path from 'path';
+import * as insensitive from '@shared/CaseInsensitive';
+import * as fs from '@shared/fs';
+import * as utils from '@shared/utils';
 import {Version, version_compare, sortByVersion} from './Version';
-import { XMLCache } from "../extension";
-import * as xml from "../xml/xml";
+import { XMLCache } from '../extension';
+import * as xml from '@shared/xml';
 import * as registry from '../registry/registry';
 import {exec, execFile} from 'child_process';
 

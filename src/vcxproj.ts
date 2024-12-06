@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import * as path from "path";
-import * as xml from "./xml/xml";
-import * as fs from './vscode-utils/fs';
+import * as path from 'path';
+import * as xml from '@shared/xml';
+import * as fs from '@shared/fs';
 import * as MsBuild from './MsBuild';
 import {MsBuildProject} from './MsBuildProject';
-import {ProjectItemEntry, Folder, FolderTree} from "./Project";
+import {ProjectItemEntry, Folder, FolderTree} from './Project';
 import {XMLCache, xml_save, log} from './extension';
 
 //-----------------------------------------------------------------------------

@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import * as path from "path";
-import * as fs from "./vscode-utils/fs";
-import * as xml from "./xml/xml";
+import * as path from 'path';
+import * as fs from '@shared/fs';
+import * as xml from '@shared/xml';
 import * as MsBuild from './MsBuild';
 import * as nuget from './nuget';
 
-import {Project, ProjectConfiguration, Folder, FolderTree, Properties, ProjectItemEntry, makeFileEntry} from "./Project";
+import {Project, ProjectConfiguration, Folder, FolderTree, Properties, ProjectItemEntry, makeFileEntry} from './Project';
 import {xml_load, xml_save, vsdir, log} from './extension';
 
 //-----------------------------------------------------------------------------
@@ -15,6 +15,7 @@ import {xml_load, xml_save, vsdir, log} from './extension';
 export class MsBuildProjectBase extends Project {
 	public	msbuild:	MsBuild.Project;
 	public	user_xml?:	xml.Element;
+	public	settings_ready	= Promise.resolve();
 	private project_dirty	= 0;
 	private user_dirty		= 0;
 	private	nuget_feeds: nuget.Feed[] = [];
@@ -54,7 +55,8 @@ export class MsBuildProjectBase extends Project {
 
 	async postload(props: MsBuild.PropertyContext) {
 		await this.msbuild.readItems(props);
-		this.msbuild.readImportedItems(props);
+
+		this.settings_ready = this.msbuild.readImportedItems(props);
 
 		if ('ProjectReference' in this.msbuild.items) {
 			for (const i of this.msbuild.items.ProjectReference.entries || []) {
@@ -286,10 +288,10 @@ export function ManagedProjectMaker(language: string) {
 
 //<Project>
 //  <!-- Implicit top import -->
-//  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+//  <Import Project="Sdk.props" Sdk='Microsoft.NET.Sdk' />
 //  ...
 //  <!-- Implicit bottom import -->
-//  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+//  <Import Project="Sdk.targets" Sdk='Microsoft.NET.Sdk' />
 //</Project>
 //
 //On a Windows machine, the Sdk.props and Sdk.targets files can be found in the %ProgramFiles%\dotnet\sdk\[version]\Sdks\Microsoft.NET.Sdk\Sdk folder.
@@ -318,7 +320,7 @@ export function CPSProjectMaker(language: string, ext: string) {
 
 		async preload(root: xml.Element) {
 			const props		= await super.preload(root);
-			await this.msbuild.import(path.join(getSdkPath(), "Sdk.props"), props);
+			await this.msbuild.import(path.join(getSdkPath(), 'Sdk.props'), props);
 
 			//Element			Include glob	Exclude glob									Remove glob
 			//Compile			**/*.cs (etc)	**/*.user; **/*.*proj; **/*.sln; **/*.vssscc	N/A
@@ -336,7 +338,7 @@ export function CPSProjectMaker(language: string, ext: string) {
 		}
 
 		async postload(props: MsBuild.PropertyContext) {
-			await this.msbuild.import(path.join(getSdkPath(), "Sdk.targets"), props);
+			await this.msbuild.import(path.join(getSdkPath(), 'Sdk.targets'), props);
 			await this.msbuild.import(`${vsdir}\\MSBuild\\Microsoft\\VisualStudio\\Managed\\Microsoft.${language}.DesignTime.targets`, props);
 			super.postload(props);
 		}
@@ -346,14 +348,14 @@ export function CPSProjectMaker(language: string, ext: string) {
 			const modified: MsBuild.Origins	= {};
 			const sdkpath	= getSdkPath();
 
-			await MsBuild.evaluateImport(path.join(sdkpath, "Sdk.props"), props);
+			await MsBuild.evaluateImport(path.join(sdkpath, 'Sdk.props'), props);
 			await MsBuild.evaluatePropsAndImports(
 				this.msbuild.root?.allElements()??[],
 				props,
 				undefined,
 				modified
 			);
-			await MsBuild.evaluateImport(path.join(sdkpath, "Sdk.targets"), props);
+			await MsBuild.evaluateImport(path.join(sdkpath, 'Sdk.targets'), props);
 			return [props, modified];
 		}
 
