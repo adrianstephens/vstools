@@ -433,7 +433,7 @@
 					"group": "2_workspace@inline"
 				}
 			]
-	  	},
+		},
 		"taskDefinitions": [
 			{
 				"type": "msbuild",

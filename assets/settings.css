@@ -1,65 +1,11 @@
-@font-face {
-	font-family: "codicon";
-	src: url("./codicon.ttf?9642aa1d48ab4e55aa1bf3f0b8678aa1") format("truetype");
-}
-
-.codicon {
-	font: normal normal normal 16px/1 codicon;
-	display: inline-block;
-	text-decoration: none;
-	text-rendering: auto;
-	text-align: center;
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
-	user-select: none;
-	-webkit-user-select: none;
-	-ms-user-select: none;
-}
-
 .hidden {
 	display: none;
 }
 
 
 body {
-	font-family: "Segoe WPC", "Segoe UI", sans-serif;
-	font-size: 13px;
-	background-color: var(--vscode-editor-background);
-	color: var(--vscode-editor-foreground);
 	margin: 0;
 	padding: 0;
-}
-
-.loading-container {
-	position: fixed;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-}
-
-.spinner {
-	width: 40px;
-	height: 40px;
-	margin-bottom: 16px;
-	border: 4px solid var(--vscode-button-background);
-	border-top: 4px solid transparent;
-	border-radius: 50%;
-	animation: spin 1s linear infinite;
-}
-
-.loading-text {
-	font-family: var(--vscode-font-family);
-	font-size: 14px;
-}
-
-@keyframes spin {
-	0% { transform: rotate(0deg); }
-	100% { transform: rotate(360deg); }
 }
 
 .settings-sidebar {
@@ -176,7 +122,7 @@ div.settings-content.invalid::after {
 	}
 	
 	& input[type="checkbox"] {
-		flex: 1;
+		flex: 0.5;
 	}
 
 	& input[type="text"],
@@ -215,6 +161,10 @@ div.settings-content.invalid::after {
 			flex-direction: row;
 		}
 	}
+
+	& span {
+		flex: 1;
+	}
 }
 /*
 .modified:first-child::after {
@@ -225,32 +175,7 @@ div.settings-content.invalid::after {
 }
 */
 
-.splitter {
-	position: relative;
-	width: 5px;
-	flex: none;
-	cursor:ew-resize;
-
-	&::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: 2px;
-		width: 1px;
-		height: 100%;
-		background-color: var(--vscode-editorGroup-border);
-		transition: background-color 0.3s;
-	}
-
-	&:hover::before {
-		left: 0;
-		width: 100%;
-		background-color: var(--vscode-sash-hoverBorder);
-	}
-}
-
-
+/*
 .caret {
 	cursor: pointer;
 	user-select: none;
@@ -271,26 +196,7 @@ div.settings-content.invalid::after {
 .caret:not(.caret-down) li {
 	display: none;
 }
-
-button.normal {
-	color: var(--vscode-button-foreground);
-	background-color: var(--vscode-button-background);
-	border: 1px solid var(--vscode-button-border,transparent);
-	border-radius: 2px;
-	line-height: 18px;
-	padding: 4px;
-	text-align: center;
-}
-
-button.codicon {
-	border: 0px;
-	background-color: initial;
-	padding: 0;
-}
-
-button.codicon:hover {
-	color: #ff0000;
-}
+*/
 
 span[contenteditable] {
 	display: inline-block;

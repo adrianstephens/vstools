@@ -1,9 +1,13 @@
 /*global window, document, console, acquireVsCodeApi, ResizeObserver*/
 
-const vscode	= acquireVsCodeApi();
 const state	 	= vscode.getState() ?? {};
-let activeItem 	= null;
 let content_width = 0;
+
+const vscroll 	= new ScrollBar(document.body, document.documentElement, false);
+const splitter	= new Splitter(document.querySelector('.splitter'), split => {
+	state.split = split;
+	vscode.setState(state);
+});
 
 function space_remaining(item) {
 	return item.parentNode.getBoundingClientRect().right - item.getBoundingClientRect().left;
@@ -64,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	contentObserver.observe(content);
 
 	if (state.split)
-		setSplitter(document.querySelector('.splitter'), state.split);
+		splitter.set(state.split);
 });
 
 
@@ -155,7 +159,12 @@ setupChecks1('#platform input[type="checkbox"]', 'platform');
 // navigation
 //-------------------------------------
 
-const targets = [];
+let activeItem 	= null;
+const targets 	= [];
+const tree		= new Tree(document.querySelector('#sidebar'), (item, open) => {
+	setActive(item);
+});
+
 
 function setActive(item) {
 	if (activeItem)
@@ -164,12 +173,7 @@ function setActive(item) {
 	activeItem = item;
 }
 
-document.querySelectorAll('.caret').forEach(caret => {
-	caret.addEventListener('click', () => {
-		caret.classList.toggle("caret-down");
-		setActive(caret);
-		//setActive(caret.parentElement);
-	});
+tree.root.querySelectorAll('.caret').forEach(caret => {
 	Array.from(caret.getElementsByTagName("li")).forEach(item => {
 		const target = document.getElementById(item.getAttribute('data-target'));
 		targets.push({item, target, caret});
@@ -187,6 +191,7 @@ document.querySelectorAll('.caret').forEach(caret => {
 targets.sort((a, b) => a.target.offsetTop - b.target.offsetTop);
 
 window.addEventListener('scroll', ()=> {
+	vscroll.update();
 	state.top = document.scrollingElement.scrollTop;
 	vscode.setState(state);
 	for (let a = 0, b = targets.length; a !== b;) {
@@ -208,50 +213,6 @@ window.addEventListener('scroll', ()=> {
 	}
 });
 
-//-------------------------------------
-// splitter
-//-------------------------------------
-
-function setSplitter(splitter, x) {
-	const left = splitter.previousSibling;
-	left.style.width	= `${x}px`;
-	left.style.flex	 	= 'none';
-}
-
-document.querySelectorAll('.splitter').forEach(splitter => {
-	splitter.addEventListener('pointerdown', e => {
-		e.preventDefault();
-		splitter.setPointerCapture(e.pointerId);
-
-		const left		= splitter.previousSibling;
-		const style		= getComputedStyle(left);
-		let split		= left.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-		const offset	= split - e.clientX;
-
-		const min		= parseFloat(style.minWidth);
-		const max		= Math.min(parseFloat(style.maxWidth), splitter.parentNode.clientWidth - 300);
-
-		left.style.width	= `${split}px`;
-		left.style.flex		= 'none';
-
-		function resizePanels(e) {
-			split = Math.min(Math.max(e.clientX + offset, min), max);
-			left.style.width = `${split}px`;
-		}
-		
-		function stopResizing(e) {
-			state.split = split;
-			vscode.setState(state);
-
-			splitter.releasePointerCapture(e.pointerId);
-			document.removeEventListener('pointermove', resizePanels);
-			document.removeEventListener('pointerup', stopResizing);
-		}
-		
-		document.addEventListener('pointermove', resizePanels);
-		document.addEventListener('pointerup', stopResizing);
-	});
-});
 
 //-------------------------------------
 // settings
@@ -330,29 +291,6 @@ event.data[i].split(';').forEach(entry => {
 });
 */
 
-function replace(text, re, process) {
-	let i = 0;
-	let result = '';
-	for (let m; (m = re.exec(text)); i = re.lastIndex)
-		result += text.substring(i, m.index) + process(m);
-	return result + text.substring(i);
-}
-
-function replace_in_element(e, re, process) {
-	if (e.id)
-		e.id = replace(e.id, re, process);
-	if (e.attributes.name)
-		e.attributes.name.value = replace(e.attributes.name.value, re, process);
-	const childNodes = e.childNodes;
-	for (let i = 0; i < childNodes.length; i++) {
-		const node = childNodes[i];
-		if (node.nodeType === window.Node.TEXT_NODE)
-			node.textContent = replace(node.textContent, re, process);
-		else if (node.nodeType === window.Node.ELEMENT_NODE)
-			replace_in_element(node, re, process);
-	}
-}
-
 window.addEventListener('message', event => {
 	switch (event.data.command) {
 		case 'set': {
@@ -408,6 +346,8 @@ window.addEventListener('message', event => {
 
 			if (event.data.values) {
 				const entry = item.children[event.data.source ?? 0];
+				template(entry, item, event.data.values);
+/*
 				const newnodes = event.data.values.map(i => {
 					const child = entry.cloneNode(true);
 					child.hidden = false;
@@ -424,7 +364,7 @@ window.addEventListener('message', event => {
 				const before = item.children[dest];
 				for (const i of newnodes)
 					item.insertBefore(i, before);
-
+*/
 				resizeObserver.observe(item);
 			}
 			break;

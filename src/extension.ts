@@ -1,21 +1,4 @@
 import * as path from 'path';
-const aliases: Record<string, string> = {};
-aliases['@shared'] = path.resolve(__dirname, '..', 'shared', 'src');
-
-import * as _Module from 'module';
-const Module = _Module as any as { _resolveFilename: (request: string, parent: NodeModule, isMain: boolean, options?: any) => string };
-
-const originalResolveFilename = Module._resolveFilename;
-Module._resolveFilename = (request, parent, isMain, options) => {
-	if (request.startsWith('@')) {
-        const parts = request.split('/');
-		const alias = aliases[parts[0]];
-		if (alias)
-			request = [alias, ...parts.slice(1)].join('/');
-    }
-    return originalResolveFilename(request, parent, isMain, options);
-};
-
 import * as vscode from 'vscode';
 import * as nodefs from 'fs';
 import * as fs from '@shared/fs';

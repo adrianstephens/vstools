@@ -4,13 +4,11 @@
 		"module": "CommonJS",
 		"moduleResolution": "Node10",
 		"lib": [
-			"es2022",
-			"ES2021.String"
+			"es2022"
 		],
 		"baseUrl": ".",
 		"paths": {
-			"@shared/*": ["./shared/src/*"],
-			"./out/*": ["./src/*"]
+			"@shared/*": ["./shared/src/*"]
 		},
 		"outDir": "out",
 		"sourceMap": true,
@@ -18,7 +16,8 @@
 		"rootDir": ".",
 		"jsx": "react-jsx",
 		"jsxImportSource": "@shared",
-		"forceConsistentCasingInFileNames": true
+		"forceConsistentCasingInFileNames": true,
+		"rewriteImports": true
 	},
 	"include": ["src/extension.ts", "shared/src/jsx.d.ts"],
 	"exclude": ["node_modules", ".vscode-test", "hidden"]

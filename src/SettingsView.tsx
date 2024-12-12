@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from '@shared/fs';
 import * as xml from '@shared/xml';
 import * as utils from '@shared/utils';
 import * as MsBuild from './MsBuild';
@@ -9,7 +8,7 @@ import {XMLCache, Extension, log} from './extension';
 import {Solution} from './Solution';
 import {Properties} from './Project';
 import {MsBuildProjectBase} from './MsBuildProject';
-import {codicons, Label, ClickableIcon} from '@shared/jsx-runtime';
+import {CSP, Nonce, id_selector, codicons, Label} from '@shared/jsx-runtime';
 
 const Uri = vscode.Uri;
 let the_panel: 					vscode.WebviewPanel | undefined;
@@ -315,10 +314,6 @@ function setItems(panel: vscode.WebviewPanel, values: Record<string, any>) {
 	panel.webview.postMessage({command:'set', values: values});
 }
 
-function id_selector(item: string) {
-	return '#'+item.replace(/\./g, '\\.').replace(/ /g, '\\ ');
-}
-
 function by_id(item: string) {
 	return id_selector(item);
 }
@@ -408,13 +403,13 @@ function isLocal(project: MsBuildProjectBase, result: Result|undefined) : boolea
 //-----------------------------------------------------------------------------
 
 async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config: Properties, project: MsBuildProjectBase, file?: string) {
-	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, name));
 
 	panel.webview.html =  `<!DOCTYPE html>` + JSX.render(<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<link rel="stylesheet" href={getUri("settings.css")}/>
+			<link rel="stylesheet" href={getUri("shared/assets/shared.css")}/>
 			</head>
 		<body>
 			<div class="loading-container">
@@ -583,7 +578,10 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<link rel="stylesheet" href={getUri("settings.css")}/>
+			<CSP csp={panel.webview.cspSource}/>
+			<link rel="stylesheet" href={getUri("shared/assets/shared.css")}/>
+			<link rel="stylesheet" href={getUri("shared/assets/tree.css")}/>
+			<link rel="stylesheet" href={getUri("assets/settings.css")}/>
 		</head>
 		
 		<body style="display:none">
@@ -622,7 +620,9 @@ async function ProjectSettings(panel: vscode.WebviewPanel, title: string, config
 
 			</div>
 
-			<script src={getUri("settings.js")}></script>
+			<script src={getUri("shared/assets/shared.js")}></script>
+			<script src={getUri("shared/assets/tree.js")}></script>
+			<script src={getUri("assets/settings.js")}></script>
 
 		</body>
 	</html>);
@@ -798,14 +798,16 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 		}
 	}, null, Extension.context.subscriptions);
 
-	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, name));
 
 	panel.webview.html = '';
 	panel.webview.html = `<!DOCTYPE html>`+ JSX.render(<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<link rel="stylesheet" href={getUri("settings.css")}/>
+			<link rel="stylesheet" href={getUri("shared/assets/shared.css")}/>
+			<link rel="stylesheet" href={getUri("shared/assets/tree.css")}/>
+			<link rel="stylesheet" href={getUri("assets/settings.css")}/>
 		</head>
 
 		<body>
@@ -817,16 +819,16 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 						<div id="configuration" style="flex:1">
 							<Label id="Configuration" display="Configuration"/>
 							<div hidden id="configuration.$(id)">
-								<ClickableIcon icon={codicons.trash} id="configuration.$(id).delete"/>
-								<ClickableIcon icon={codicons.add} id="configuration.$(id).duplicate"/>
+								<button icon={codicons.trash} id="configuration.$(id).delete"/>
+								<button icon={codicons.add} id="configuration.$(id).duplicate"/>
 								<input type="checkbox" name="$(id)" id="configuration.$(id).check"><span contenteditable name="configuration.$(id)">$(name)</span></input>
 							</div>
 						</div>
 						<div id="platform" style="flex:1">
 							<Label id="Platform" display="Platform"/>
 							<div hidden id="platform.$(id)">
-								<ClickableIcon icon={codicons.trash} id="platform.$(id).delete"/>
-								<ClickableIcon icon={codicons.add} id="platform.$(id).duplicate"/>
+								<button icon={codicons.trash} id="platform.$(id).delete"/>
+								<button icon={codicons.add} id="platform.$(id).duplicate"/>
 								<input type="checkbox" name="$(id)" id="platform.$(id).check"><span contenteditable name="platform.$(id)">$(name)</span></input>
 							</div>
 						</div>
@@ -857,13 +859,17 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 					<h1>Configurations</h1>
 
 					<h2><div class="setting-item">
-						<span>Project</span><span>Configuration</span><span>Platform</span><span style='text-align: center'>Build</span><span style='text-align: center'>Deploy</span>
+						<label>Project</label>
+						<span style="flex:1">Configuration</span>
+						<span style="flex:1">Platform</span>
+						<span style='flex:0.5; text-align: center'>Build</span>
+						<span style='flex:0.5; text-align: center'>Deploy</span>
 					</div></h2>
 
 					{projects.map(p => <div class="setting-item">
-						<span>{p.name}</span>
+						<label>{p.name}</label>
 						<DropDownList id = {p.name+'.config'}	values = {p.configurationList().map(e => ({value: e, display: e}))}/>
-						<DropDownList id = {p.name+'.plat'}	values = {p.platformList().map(e => ({value: e, display: e}))}/>
+						<DropDownList id = {p.name+'.plat'}		values = {p.platformList().map(e => ({value: e, display: e}))}/>
 						<input type="checkbox" id={p.name+'.build'}></input>
 						<input type="checkbox" id={p.name+'.deploy'}></input>
 					</div>)}
@@ -871,7 +877,9 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 
 			</div>
 
-			<script src={getUri("settings.js")}></script>
+			<script src={getUri("shared/assets/shared.js")}></script>
+			<script src={getUri("shared/assets/tree.js")}></script>
+			<script src={getUri("assets/settings.js")}></script>
 
 		</body>
 	</html>);
@@ -885,13 +893,14 @@ function SolutionSettings(panel: vscode.WebviewPanel, title: string, config: Pro
 //-----------------------------------------------------------------------------
 
 async function PropsSettings(panel: vscode.WebviewPanel, title: string, config: Properties, project: MsBuildProjectBase, file?: string) {
-	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, 'assets', name));
+	const 	getUri = (name: string) => panel.webview.asWebviewUri(Uri.joinPath(Extension.context.extensionUri, name));
 
 	panel.webview.html = `<!DOCTYPE html>`+ JSX.render(<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<link rel="stylesheet" href={getUri("settings.css")}/>
+			<link rel="stylesheet" href={getUri("shared/assets/shared.css")}/>
+			<link rel="stylesheet" href={getUri("assets/settings.css")}/>
 		</head>
 
 		<body>
